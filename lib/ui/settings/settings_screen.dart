@@ -1,10 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/seed_demo.dart';
 import '../../models/app_settings_data.dart';
+import '../../models/weigh_in.dart';
 import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/calorie_math.dart';
+import '../widgets/profile_selectors.dart';
 
 /// BYOK settings: the user's own OpenAI key (secure vault) and the
 /// vocabulary of dish names the transcription should recognize.
@@ -19,6 +24,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _keyController = TextEditingController();
   final _vocabController = TextEditingController();
   final _maintenanceController = TextEditingController();
+  final _heightController = TextEditingController();
+  final _ageController = TextEditingController();
   String? _savedKey;
   bool _hydrated = false;
   bool _targetsHydrated = false;
@@ -26,12 +33,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _saving = false;
   String _weightUnit = 'kg';
   String? _targetError;
+  Sex? _sex;
+  ActivityLevel? _activity;
 
   @override
   void dispose() {
     _keyController.dispose();
     _vocabController.dispose();
     _maintenanceController.dispose();
+    _heightController.dispose();
+    _ageController.dispose();
     super.dispose();
   }
 
@@ -56,6 +67,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _maintenanceController.text =
         data.maintenanceKcal.round().toString();
     _weightUnit = data.weightUnit;
+    _heightController.text = data.heightCm?.toString() ?? '';
+    _ageController.text = data.age?.toString() ?? '';
+    _sex = data.sex;
+    _activity = data.activityLevel;
   }
 
   Future<void> _save() async {
@@ -74,6 +89,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       setState(() => _targetError = 'Enter maintenance calories above zero.');
       return;
     }
+    // Profile fields are optional here (a partial profile is fine), but when
+    // present they must be sensible.
+    final heightText = _heightController.text.trim();
+    double? heightCm;
+    if (heightText.isNotEmpty) {
+      heightCm = double.tryParse(heightText.replaceAll(',', '.'));
+      if (heightCm == null || heightCm <= 0 || heightCm > 300) {
+        setState(() => _targetError = 'Enter a height between 1 and 300 cm.');
+        return;
+      }
+    }
+    final ageText = _ageController.text.trim();
+    int? age;
+    if (ageText.isNotEmpty) {
+      age = int.tryParse(ageText);
+      if (age == null || age <= 0 || age > 120) {
+        setState(() => _targetError = 'Enter an age between 1 and 120.');
+        return;
+      }
+    }
     setState(() {
       _keyError = null;
       _targetError = null;
@@ -87,6 +122,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           appSettings.copyWith(
             maintenanceKcal: maintenance,
             weightUnit: _weightUnit,
+            heightCm: heightCm,
+            age: age,
+            sex: _sex,
+            activityLevel: _activity,
           ),
         );
     if (!mounted) return;
@@ -98,6 +137,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Saved')),
     );
+  }
+
+  /// Fills the maintenance field from the profile + latest weigh-in, so the
+  /// manual target can be a suggestion rather than a guess. Never overwrites
+  /// without the user pressing this button.
+  Future<void> _estimateFromProfile() async {
+    final heightCm = double.tryParse(
+        _heightController.text.trim().replaceAll(',', '.'));
+    final age = int.tryParse(_ageController.text.trim());
+    final sex = _sex;
+    final activity = _activity;
+    if (heightCm == null || age == null || sex == null || activity == null) {
+      setState(() => _targetError =
+          'Fill in height, age, sex and activity to use the estimate.');
+      return;
+    }
+    final weighIns = ref.read(weighInsProvider).value ?? const <WeighIn>[];
+    if (weighIns.isEmpty) {
+      setState(() => _targetError =
+          'Add a weigh-in first — the estimate needs your current weight.');
+      return;
+    }
+    final estimate = CalorieMath.maintenance(
+      weightKg: weighIns.first.weightKg,
+      heightCm: heightCm,
+      age: age,
+      sex: sex,
+      activity: activity,
+    ).round();
+    setState(() {
+      _maintenanceController.text = estimate.toString();
+      _targetError = null;
+    });
   }
 
   void _replaceKey() {
@@ -115,7 +187,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         backgroundColor: AppColors.bark,
         title: const Text('Delete all entries?'),
         content: const Text(
-            'Every meal and workout on this device will be removed. This can’t be undone.'),
+            'Every meal, workout, weigh-in, chat, memory and saved workout '
+            'on this device will be removed. This can’t be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -137,9 +210,61 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await db.wipeAllData();
     ref.invalidate(dayLogsProvider);
     ref.invalidate(weighInsProvider);
+    ref.invalidate(chatMessagesProvider);
+    ref.invalidate(memoriesProvider);
+    ref.invalidate(exercisesProvider);
+    await ref.read(rearmDailyReminderProvider)(db: db);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('All entries deleted')),
+    );
+  }
+
+  /// Fills the app with a realistic “busy week” so the screens can be
+  /// reviewed without real logging. Wipes the current records first; the
+  /// OpenAI key and targets are kept. Debug-only affordance.
+  Future<void> _loadDemo() async {
+    if (!kDebugMode) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.bark,
+        title: const Text('Load demo data?'),
+        content: const Text(
+            'Replaces your entries with a realistic “busy week” demo — '
+            'meals, workouts, weigh-ins, a coach conversation, memories and '
+            'saved workouts. Your OpenAI key and targets are kept.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.plantain,
+              foregroundColor: AppColors.pot,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Load demo'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final db = await ref.read(databaseProvider.future);
+    await db.wipeAllData();
+    await seedDemoData(db, force: true);
+    ref.invalidate(dayLogsProvider);
+    ref.invalidate(weighInsProvider);
+    ref.invalidate(chatMessagesProvider);
+    ref.invalidate(memoriesProvider);
+    ref.invalidate(exercisesProvider);
+    ref.invalidate(appSettingsProvider);
+    // The demo logs today, so the nudge has nothing to say.
+    await ref.read(rearmDailyReminderProvider)(db: db);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Demo data loaded')),
     );
   }
 
@@ -259,7 +384,61 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             unit: _weightUnit,
             onChanged: (u) => setState(() => _weightUnit = u),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
+          Text('Profile', style: AppText.label()),
+          const SizedBox(height: 8),
+          Text(
+            'Height, age, sex and activity let the app estimate your '
+            'maintenance instead of guessing. The estimate uses your latest '
+            'weigh-in for current weight.',
+            style: AppText.bodyMuted(),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _heightController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  style: AppText.dataS(),
+                  decoration: const InputDecoration(
+                    labelText: 'Height',
+                    suffixText: 'cm',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _ageController,
+                  keyboardType: TextInputType.number,
+                  style: AppText.dataS(),
+                  decoration: const InputDecoration(
+                    labelText: 'Age',
+                    suffixText: 'years',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SexSelector(value: _sex, onChanged: (s) => setState(() => _sex = s)),
+          const SizedBox(height: 12),
+          ActivitySelector(
+            value: _activity,
+            onChanged: (a) => setState(() => _activity = a),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _estimateFromProfile,
+              icon: const Icon(Icons.calculate_outlined, size: 18),
+              label: const Text('Use profile to estimate maintenance'),
+            ),
+          ),
+          const SizedBox(height: 16),
           const Divider(),
           const SizedBox(height: 16),
           Text('Reminder', style: AppText.label()),
@@ -288,6 +467,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             style: AppText.bodyMuted(),
           ),
           const SizedBox(height: 12),
+          if (kDebugMode) ...[
+            OutlinedButton.icon(
+              onPressed: _loadDemo,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.plantain,
+                side: const BorderSide(color: AppColors.plantain),
+              ),
+              icon: const Icon(Icons.auto_awesome_rounded, size: 20),
+              label: const Text('Load demo data'),
+            ),
+            const SizedBox(height: 12),
+          ],
           OutlinedButton.icon(
             onPressed: _deleteAll,
             style: OutlinedButton.styleFrom(
@@ -400,7 +591,7 @@ class _ReminderTile extends ConsumerWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Nudge me to log',
+                    'Only when a meal or workout is missing',
                     style: AppText.bodyMuted(fontSize: 13),
                   ),
                 ],
@@ -435,11 +626,11 @@ class _ReminderTile extends ConsumerWidget {
     if (current == null) return;
     final next = current.copyWith(reminderEnabled: value);
     await ref.read(appSettingsProvider.notifier).save(next);
-    final reminder = ref.read(reminderServiceProvider);
     if (!value) {
-      await reminder.cancel();
+      await ref.read(rearmDailyReminderProvider)();
       return;
     }
+    final reminder = ref.read(reminderServiceProvider);
     final granted = await reminder.requestPermissions();
     if (!granted) {
       await ref.read(appSettingsProvider.notifier).save(current);
@@ -451,10 +642,8 @@ class _ReminderTile extends ConsumerWidget {
       }
       return;
     }
-    await reminder.scheduleDaily(
-      hour: next.reminderTime.hour,
-      minute: next.reminderTime.minute,
-    );
+    // The nudge is armed only when nothing has been logged today.
+    await ref.read(rearmDailyReminderProvider)();
   }
 
   Future<void> _pickTime(
@@ -464,8 +653,7 @@ class _ReminderTile extends ConsumerWidget {
     await ref.read(appSettingsProvider.notifier).save(
           ref.read(appSettingsProvider).value!.copyWith(reminderTime: picked),
         );
-    final reminder = ref.read(reminderServiceProvider);
-    await reminder.scheduleDaily(hour: picked.hour, minute: picked.minute);
+    await ref.read(rearmDailyReminderProvider)();
   }
 }
 

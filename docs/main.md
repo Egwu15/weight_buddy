@@ -1,10 +1,10 @@
 # Lean PRD: Lightweight Voice Calorie, Macro & Exercise Tracker
 
-> **Status:** Implemented as a Flutter app (v2.0). This document is the source of truth for what was built; features marked **Built** are implemented and tested.
+> **Status:** Implemented as a Flutter app (v3.0). This document is the source of truth for what was built; features marked **Built** are implemented and tested.
 
 ## 1. Product Overview
 
-A personal, lightweight mobile/web application that allows a single user to log meals and workouts via voice input. To reliably capture localized or regional dish names that standard native phone speech recognizers misinterpret, the application routes recorded audio through OpenAI's Audio API (whisper-1 or gpt-transcribe). Transcripts are then processed via GPT API to extract food items, calculate estimated calories, and calculate macronutrients (Protein, Carbs, Fat) or exercise calorie burn.
+A personal, lightweight mobile/web application that allows a single user to log meals and workouts by voice — with typed input as a fallback for noisy rooms, mic failures or tired voices. To reliably capture localized or regional dish names that standard native phone speech recognizers misinterpret, the application routes recorded audio through OpenAI's Audio API (whisper-1 or gpt-transcribe). Transcripts are then processed via GPT API to extract food items, calculate estimated calories, and calculate macronutrients (Protein, Carbs, Fat) or exercise calorie burn.
 
 ### Goals
 
@@ -16,7 +16,7 @@ A personal, lightweight mobile/web application that allows a single user to log 
 ## 2. Target User & Use Case
 
 - **Primary User:** Single personal owner tracking daily nutrition and exercise.
-- **Core Scenario:** User taps record, speaks what they ate (including regional/local dishes) or what exercise they performed, and receives an instant breakdown of calories, macros, or calories burned.
+- **Core Scenario:** User taps record and speaks what they ate (including regional/local dishes) or what exercise they performed — or types it instead when the room is noisy — and receives an instant breakdown of calories, macros, or calories burned.
 
 ## 3. Core Functional Requirements
 
@@ -36,11 +36,13 @@ A personal, lightweight mobile/web application that allows a single user to log 
 
 **Status:** Built.
 
-**Description:** Convert recorded speech into structured food records including calories and macronutrient totals.
+**Description:** Convert recorded speech (or typed text) into structured food records including calories, macronutrients and a meal-type label.
 
 **Requirements:**
 
 - **Audio Capture & API Transcription:** Record raw audio on-device (e.g., .m4a or .wav) and post directly to OpenAI Audio API (/v1/audio/transcriptions).
+- **Typing fallback:** the record sheet's idle view offers **"Type instead"** — a multiline field runs the same GPT parse pipeline as voice (skipping transcription), so logging still works in noisy places or when the mic is unavailable.
+- **No-key onboarding:** with no saved OpenAI key, the sheet explains what's needed and offers **"Go to Settings"**, which closes the sheet and jumps straight to the Settings tab.
 - **GPT Meal & Macro Analysis:** Send transcribed text to GPT API using Structured Outputs (JSON Schema).
 - **Extracted Attributes:**
   - Food items with estimated portion sizes
@@ -48,13 +50,14 @@ A personal, lightweight mobile/web application that allows a single user to log 
   - Protein (g)
   - Carbohydrates (g)
   - Fat (g)
-- Display a confirmation card showing the parsed items and macro breakdown before persisting to local logs.
+  - Meal-type classification (breakfast / lunch / dinner / snack), inferred from the food + current local time and user-adjustable on the confirm card
+- Display a confirmation card showing the parsed items, macro breakdown and a meal-type picker before persisting to local logs.
 
 ### Feature 3: Voice Exercise Logging & Burn Calculation
 
 **Status:** Built.
 
-**Description:** Convert recorded speech describing physical activity into calorie burn estimates.
+**Description:** Convert recorded speech (or typed text) describing physical activity into calorie burn estimates.
 
 **Requirements:**
 
@@ -70,7 +73,8 @@ A personal, lightweight mobile/web application that allows a single user to log 
 
 **Requirements:**
 
-- **Calorie Summary Card:** Total Calories Consumed, Total Calories Burned, and Net Calories.
+- **Calorie Summary Card:** Total Calories Consumed, Total Calories Burned, Net Calories, and **Left** — maintenance minus net (green when the day is still under budget, jollof when over).
+- **Period glance:** under the daily ledger, a compact readout of what's left for the current **week** and **month** (budget − net), tappable through to the Month tab for the full period view.
 - **Macro Summary Card:** Daily totals for Protein (g), Carbohydrates (g), and Fat (g).
 - **Day's Wave (signature):** Today's entries are drawn as a waveform — each peak is one entry, height follows calories, colour follows type (meal / exercise), position follows time of day. Tapping a peak reveals its summary; an empty day is a flatline invitation to log.
 - **Log Timeline:** Chronological feed of meals (with macro details) and workouts logged for the active date.
@@ -86,7 +90,9 @@ A personal, lightweight mobile/web application that allows a single user to log 
 
 - **Maintenance target setting:** user-configurable daily maintenance calories (Settings → Targets), the line everything measures against.
 - **Color coding:** a day with logs is tinted **ugu (green)** when net kcal ≤ maintenance, **jollof (red-orange)** when above, and stays neutral when nothing was logged.
+- **Per-day maintenance snapshots:** every log records the maintenance target in effect that day (`day_maintenance`); the calendar and the ON-PLAN streak judge each day by its own snapshot (falling back to the current target for legacy days).
 - **Streaks:** LOG STREAK (consecutive days with ≥1 entry) and ON-PLAN (consecutive days logged *and* at/below maintenance), computed from the last 90 days.
+- **Week & month budget summaries:** two ledger cards above the calendar. The month card follows the existing month navigation; the week card (Monday–Sunday) has its own prev/next arrows. **LEFT** = period budget − net, where the budget is every day in the period at its maintenance target (per-day snapshot, falling back to the current target for days never logged).
 - **Navigation:** tapping a calendar day jumps the Today dashboard to that day.
 - Weight unit setting (kg/lb) lives in the same Targets section.
 
@@ -135,15 +141,40 @@ A personal, lightweight mobile/web application that allows a single user to log 
 
 **Status:** Built.
 
-**Description:** A user-settable daily local notification nudging the user to log.
+**Description:** A user-settable daily local notification that only nudges when the day still has gaps.
 
 **Requirements:**
 
 - Settings → Reminder: on/off switch + time picker.
 - `flutter_local_notifications` with `timezone` (device-local IANA zone via `flutter_timezone`).
 - **Inexact daily scheduling** (`AndroidScheduleMode.inexactAllowWhileIdle`) — no exact-alarm permission needed on Android.
+- **Gap-aware nudge:** at every re-arm point (app launch, foreground resume, after each log add/delete, settings change) the message is chosen from today's entries — nothing logged → "What did you eat today?"; breakfast/lunch/dinner missing (snacks never count) → "Anything else today? (…)"; meals complete but no workout → "Did you get your workout in?"; a complete day or a switched-off reminder → cancelled, silent.
 - **Re-armed on every app launch** (Android does not persist schedules across reboots).
 - Runtime permission flow for iOS and Android 13+.
+
+### Feature 10: First-run profile & maintenance estimate
+
+**Status:** Built.
+
+**Description:** On a brand-new install the app asks a few quick questions
+(height, weight, age, sex, activity level) so the daily maintenance-calorie
+target is *estimated* instead of guessed. Existing installs (any logs, a
+weigh-in, or a stored maintenance target) skip the questionnaire entirely.
+
+**Requirements:**
+
+- **Onboarding gate:** the shell shows the questionnaire until the profile is
+  completed or skipped (`app_settings.profile_completed`); fresh installs only.
+- **Questions:** height (cm), current weight (kg/lb — saved as today's first
+  weigh-in), age, sex, activity level (5 options, 1.2–1.9 factors).
+- **Mifflin-St Jeor estimate:** `BMR = 10·kg + 6.25·cm − 5·age + (5 | −161)`,
+  maintenance = BMR × activity factor. Shown live on the questionnaire and
+  written to the existing `maintenance_kcal` target — the single line the
+  calendar, budgets, streaks and coach all measure against.
+- **Editable later:** Settings → Targets gains a Profile section (height, age,
+  sex, activity) plus a "Use profile to estimate maintenance" action that
+  pre-fills the manual field from the profile + latest weigh-in. A manual
+  value is never overwritten without pressing that button.
 
 ## 4. Technical Specifications & API Integration
 
@@ -151,7 +182,7 @@ A personal, lightweight mobile/web application that allows a single user to log 
 
 - **Framework:** Flutter — iOS and Android targets (web considered a future target)
 - **State management:** flutter_riverpod (Riverpod 3)
-- **Local persistence:** SQLite via `sqflite` (offline-first) — schema v2 with migration
+- **Local persistence:** SQLite via `sqflite` (offline-first) — schema v3 with migration
 - **Secure storage:** `flutter_secure_storage` — iOS Keychain / Android EncryptedSharedPreferences (BYOK key + vocabulary)
 - **Audio capture:** `record` (.m4a, live amplitude stream for the waveform)
 - **Notifications:** `flutter_local_notifications` + `timezone` (+ `flutter_timezone` for the local IANA zone)
@@ -183,6 +214,7 @@ All schemas are **fully strict-mode compliant** — every property is in `requir
 {
   "entry_type": "meal",
   "summary": "Jollof rice with 2 pieces fried chicken and fried plantain",
+  "meal_type": "lunch",
   "items": [
     {
       "name": "Jollof Rice",
@@ -226,6 +258,7 @@ All schemas are **fully strict-mode compliant** — every property is in `requir
 {
   "entry_type": "exercise",
   "summary": "30 min moderate treadmill run",
+  "meal_type": null,
   "activity": "Treadmill Running",
   "duration_minutes": 30,
   "estimated_calories_burned": 300
@@ -238,10 +271,14 @@ All schemas are **fully strict-mode compliant** — every property is in `requir
 - **Schema v1:** `logs`: id, timestamp, type (meal/exercise), summary, calories, protein_g, carbs_g, fat_g, raw_transcript, items (JSON array of parsed food items for meals).
 - **Schema v2 (migrated via `onUpgrade`):**
   - `weigh_ins`: id, date, weight_kg, note.
-  - `app_settings`: key/value KV for non-secret config (maintenance_kcal, weight_unit, reminder_enabled, reminder_time, memory_enabled).
+  - `app_settings`: key/value KV for non-secret config (maintenance_kcal, weight_unit, reminder_enabled, reminder_time, memory_enabled, plus the first-run profile: height_cm, age, sex, activity_level, profile_completed).
   - `chat_messages`: id, role, content, created_at (persisted coach thread).
   - `memories`: id, topic, content, category, source, created_at, updated_at, active — unique active index on topic for latest-wins upsert.
   - `exercise_recommendations`: id, name, description, muscle_groups (JSON), sets, reps, rest_seconds, duration_minutes, difficulty, plan_name, source_chat_id, created_at, archived.
+- **Schema v3 (migrated via `onUpgrade`):**
+  - `logs` gains `meal_type` (breakfast/lunch/dinner/snack; legacy rows default to `meal`).
+  - `day_maintenance`: day (local-midnight millis, PK) → maintenance_kcal — a per-day snapshot written whenever a log is added, so past days are judged by the target in effect that day.
+- **Demo data (debug builds):** Settings → Your data → "Load demo data" (hidden in release builds) replaces the records with a realistic busy dataset — ~14 days of tagged meals and workouts, a weigh-in trend, a coach conversation, memories and a saved exercise library. Idempotent via a `demo_seeded` marker; OpenAI key and targets are preserved.
 - **Secrets** (OpenAI key, vocabulary) stay in the platform secure store, never in SQLite.
 - **Coach context** (digest + memories + saved exercises) travels to OpenAI only while chatting; everything else is offline-first.
 

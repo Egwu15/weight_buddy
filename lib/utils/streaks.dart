@@ -15,19 +15,23 @@ class Streaks {
 /// Walks backwards from [today] through [perDay] counting streaks.
 ///
 /// A logging day has any entry; an on-plan day must also have
-/// `netKcal <= maintenanceKcal`. A missing day breaks both streaks.
+/// `netKcal <= maintenanceKcal`. Each day is judged against its own
+/// maintenance snapshot from [dayMaintenance] when present, falling back to
+/// the current [maintenanceKcal]. A missing day breaks both streaks.
 Streaks computeStreaks(
   Map<DateTime, LogTotals> perDay,
   DateTime today,
-  double maintenanceKcal,
-) {
+  double maintenanceKcal, {
+  Map<DateTime, double> dayMaintenance = const {},
+}) {
   var logging = 0, onPlan = 0;
   var d = DateTime(today.year, today.month, today.day);
   for (var i = 0; i < 366; i++) {
     final totals = perDay[d];
     if (totals == null) break;
     logging++;
-    if (totals.netKcal <= maintenanceKcal) onPlan++;
+    final m = dayMaintenance[d] ?? maintenanceKcal;
+    if (totals.netKcal <= m) onPlan++;
     d = d.subtract(const Duration(days: 1));
   }
   return Streaks(logging: logging, onPlan: onPlan);

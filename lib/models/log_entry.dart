@@ -12,6 +12,24 @@ enum EntryType {
       value == exercise.apiName ? exercise : meal;
 }
 
+/// Which meal of the day a food entry belongs to. `meal` is the fallback for
+/// legacy rows and defensive parses (and is meaningless for exercises).
+enum MealType {
+  meal('meal'),
+  breakfast('breakfast'),
+  lunch('lunch'),
+  dinner('dinner'),
+  snack('snack');
+
+  const MealType(this.apiName);
+  final String apiName;
+
+  static MealType fromApiName(String value) => values.firstWhere(
+        (m) => m.apiName == value,
+        orElse: () => MealType.meal,
+      );
+}
+
 /// A single food item parsed out of a spoken meal.
 class MealItem {
   const MealItem({
@@ -62,6 +80,7 @@ class LogEntry {
     required this.fatG,
     required this.rawTranscript,
     this.items = const [],
+    this.mealType = MealType.meal,
   });
 
   final int? id;
@@ -83,6 +102,10 @@ class LogEntry {
   /// Parsed food items (meals only).
   final List<MealItem> items;
 
+  /// Which meal of the day this is (breakfast/lunch/dinner/snack). `meal`
+  /// means unknown/legacy; exercises always use the default.
+  final MealType mealType;
+
   /// Optional extra context for exercise entries (duration, activity name).
   String? get activity => null;
 
@@ -97,6 +120,7 @@ class LogEntry {
         fatG: fatG,
         rawTranscript: rawTranscript,
         items: items,
+        mealType: mealType,
       );
 
   Map<String, Object?> toMap() => {
@@ -109,6 +133,7 @@ class LogEntry {
         'fat_g': fatG,
         'raw_transcript': rawTranscript,
         'items': jsonEncode(items.map((i) => i.toJson()).toList()),
+        'meal_type': mealType.apiName,
       };
 
   factory LogEntry.fromMap(Map<String, Object?> map) {
@@ -134,6 +159,8 @@ class LogEntry {
       fatG: ((map['fat_g'] as num?) ?? 0).toDouble(),
       rawTranscript: (map['raw_transcript'] as String?) ?? '',
       items: items,
+      mealType:
+          MealType.fromApiName((map['meal_type'] as String?) ?? 'meal'),
     );
   }
 }
@@ -184,4 +211,21 @@ class LogTotals {
         carbsG: carbsG + other.carbsG,
         fatG: fatG + other.fatG,
       );
+}
+
+/// Aggregates for a whole period — a week or a month — pairing the ledger
+/// totals with the maintenance budget that period carries. The budget is the
+/// sum of every day's target (per-day snapshot where one exists, else the
+/// current target), so LEFT = budget − net answers "how many calories do I
+/// have left this week / month?".
+class PeriodTotals {
+  const PeriodTotals({required this.totals, required this.budgetKcal});
+
+  final LogTotals totals;
+
+  /// Sum of the daily maintenance target over every day in the period.
+  final double budgetKcal;
+
+  /// What's left of the period's budget after net calories.
+  double get leftKcal => budgetKcal - totals.netKcal;
 }

@@ -6,6 +6,8 @@ import '../../models/log_entry.dart';
 import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/formatters.dart';
+import '../widgets/period_ledger_card.dart';
 
 /// The month at a glance: every day tinted by its balance against
 /// maintenance, with logging and on-plan streaks up top.
@@ -20,9 +22,14 @@ class MonthScreen extends ConsumerWidget {
     final month = ref.watch(selectedMonthProvider);
     final totalsAsync = ref.watch(monthTotalsProvider(month));
     final streaksAsync = ref.watch(streakProvider);
-    final maintenance =
+    final currentMaintenance =
         ref.watch(appSettingsProvider).value?.maintenanceKcal ?? 2200;
+    final dayMaintenanceAsync = ref.watch(monthMaintenanceProvider(month));
+    final dayMaintenance = dayMaintenanceAsync.value ?? const <String, double>{};
     final totals = totalsAsync.value ?? const <String, LogTotals>{};
+    final weekStart = ref.watch(selectedWeekProvider);
+    final weekAsync = ref.watch(weekTotalsProvider(weekStart));
+    final monthPeriodAsync = ref.watch(monthPeriodTotalsProvider(month));
 
     return Scaffold(
       body: SafeArea(
@@ -37,6 +44,24 @@ class MonthScreen extends ConsumerWidget {
                   ref.read(selectedMonthProvider.notifier).shift(n),
             ),
             const SizedBox(height: 12),
+            PeriodLedgerCard(
+              title: 'MONTH · ${DateFormat('MMMM yyyy').format(month)}',
+              totals: monthPeriodAsync.value?.totals ?? const LogTotals(),
+              budgetKcal: monthPeriodAsync.value?.budgetKcal ?? 0,
+            ),
+            const SizedBox(height: 12),
+            PeriodLedgerCard(
+              title:
+                  'WEEK · ${Formatters.range(weekStart, weekStart.add(const Duration(days: 7)))}',
+              totals: weekAsync.value?.totals ?? const LogTotals(),
+              budgetKcal: weekAsync.value?.budgetKcal ?? 0,
+              previousTooltip: 'Previous week',
+              nextTooltip: 'Next week',
+              onPrevious: () =>
+                  ref.read(selectedWeekProvider.notifier).shift(-1),
+              onNext: () => ref.read(selectedWeekProvider.notifier).shift(1),
+            ),
+            const SizedBox(height: 12),
             _StreakRow(
               logging: streaksAsync.value?.logging ?? 0,
               onPlan: streaksAsync.value?.onPlan ?? 0,
@@ -47,7 +72,8 @@ class MonthScreen extends ConsumerWidget {
             _CalendarGrid(
               month: month,
               totals: totals,
-              maintenance: maintenance,
+              dayMaintenance: dayMaintenance,
+              currentMaintenance: currentMaintenance,
               onSelectDay: onSelectDay,
             ),
             const SizedBox(height: 16),
@@ -207,13 +233,15 @@ class _CalendarGrid extends StatelessWidget {
   const _CalendarGrid({
     required this.month,
     required this.totals,
-    required this.maintenance,
+    required this.dayMaintenance,
+    required this.currentMaintenance,
     required this.onSelectDay,
   });
 
   final DateTime month;
   final Map<String, LogTotals> totals;
-  final double maintenance;
+  final Map<String, double> dayMaintenance;
+  final double currentMaintenance;
   final ValueChanged<DateTime> onSelectDay;
 
   @override
@@ -245,7 +273,9 @@ class _CalendarGrid extends StatelessWidget {
         final isToday = date.year == now.year &&
             date.month == now.month &&
             date.day == now.day;
-        final status = _statusFor(totals[key], maintenance);
+        // Each day is judged by the target in effect when it was logged.
+        final m = dayMaintenance[key] ?? currentMaintenance;
+        final status = _statusFor(totals[key], m);
         return _DayCell(
           dayNumber: dayNumber,
           status: status,

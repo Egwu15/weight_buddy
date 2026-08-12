@@ -14,6 +14,11 @@ import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
+import '../widgets/macro_pill.dart';
+
+/// Results the record sheet can pop with, so the launcher can react.
+const kRecordSheetLogged = 'logged';
+const kRecordSheetGoToSettings = 'settings';
 
 enum _Stage { idle, recording, processing, confirm, needsKey, error, type }
 
@@ -40,6 +45,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
   String _fileName = '';
   String _transcript = '';
   ParsedLog? _parsed;
+  bool _typed = false;
 
   @override
   void dispose() {
@@ -61,8 +67,10 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
       });
       return;
     }
-    await recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc),
-        path: path);
+    await recorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: path,
+    );
     _recorder = recorder;
     _levels.clear();
     _tooShort = false;
@@ -75,12 +83,12 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
     _ampSub = recorder
         .onAmplitudeChanged(const Duration(milliseconds: 80))
         .listen((amp) {
-      final norm = ((amp.current + 60) / 60).clamp(0.0, 1.0);
-      setState(() {
-        _levels.add(norm);
-        if (_levels.length > 48) _levels.removeAt(0);
-      });
-    });
+          final norm = ((amp.current + 60) / 60).clamp(0.0, 1.0);
+          setState(() {
+            _levels.add(norm);
+            if (_levels.length > 48) _levels.removeAt(0);
+          });
+        });
     setState(() => _stage = _Stage.recording);
   }
 
@@ -111,6 +119,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
   }
 
   Future<void> _process() async {
+    _typed = false;
     try {
       final service = ref.read(openaiServiceProvider);
       final vocab = ref.read(settingsProvider).value?.vocabulary ?? '';
@@ -149,8 +158,30 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
     final parsed = await service.parseTranscript(text);
     if (!mounted) return;
     _transcript = text;
+    _typed = true;
     _parsed = parsed;
     setState(() => _stage = _Stage.confirm);
+  }
+
+  /// Same parse as [_parseTyped], but with the voice path's error handling so
+  /// a typed entry can’t crash the sheet on a failed API call.
+  Future<void> _submitTyped(String raw) async {
+    _typed = true;
+    try {
+      await _parseTyped(raw);
+    } on OpenAIServiceException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _stage = _Stage.error;
+        _errorMessage = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _stage = _Stage.error;
+        _errorMessage = 'Something went wrong while parsing that. Try again.';
+      });
+    }
   }
 
   Future<void> _save(ParsedLog parsed) async {
@@ -160,7 +191,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
     );
     await ref.read(dayLogsProvider.notifier).add(entry);
     if (!mounted) return;
-    Navigator.of(context).pop(true);
+    Navigator.of(context).pop(kRecordSheetLogged);
   }
 
   String get _elapsed {
@@ -173,47 +204,61 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
   Widget build(BuildContext context) {
     final service = ref.watch(openaiServiceProvider);
     final Widget body;
-    if (service == null && _stage != _Stage.error && _stage != _Stage.processing) {
-      body = const _Tight(child: _NeedsKeyView());
+    if (service == null &&
+        _stage != _Stage.error &&
+        _stage != _Stage.processing) {
+      body = _Tight(
+        child: _NeedsKeyView(
+          onGoToSettings: () =>
+              Navigator.of(context).pop(kRecordSheetGoToSettings),
+        ),
+      );
     } else {
       body = switch (_stage) {
         _Stage.idle => _Tight(
-            child: _IdleView(
-              tooShort: _tooShort,
-              onStart: _startRecording,
-              onStop: _stopRecording,
-              onType: () => setState(() => _stage = _Stage.type),
-            ),
+          child: _IdleView(
+            tooShort: _tooShort,
+            onStart: _startRecording,
+            onStop: _stopRecording,
+            onType: () => setState(() => _stage = _Stage.type),
           ),
+        ),
         _Stage.type => _Tight(
-            child: _TypeView(
-              onBack: () => setState(() => _stage = _Stage.idle),
-              onSubmit: _parseTyped,
-            ),
+          child: _TypeView(
+            onBack: () => setState(() => _stage = _Stage.idle),
+            onSubmit: _submitTyped,
           ),
+        ),
         _Stage.recording => _Tight(
-            child: _RecordingView(
-              elapsed: _elapsed,
-              levels: List.unmodifiable(_levels),
-              onStop: _stopRecording,
-            ),
+          child: _RecordingView(
+            elapsed: _elapsed,
+            levels: List.unmodifiable(_levels),
+            onStop: _stopRecording,
           ),
+        ),
         _Stage.processing => const _Tight(child: _ProcessingView()),
         _Stage.confirm => _ConfirmView(
-            parsed: _parsed!,
-            onSave: (edited) => _save(edited),
+          parsed: _parsed!,
+          sourceLabel: _typed ? 'You wrote:' : 'The words I heard:',
+          onSave: (edited) => _save(edited),
+          onDiscard: () => Navigator.of(context).pop(),
+        ),
+        _Stage.needsKey => _Tight(
+          child: _NeedsKeyView(
+            onGoToSettings: () =>
+                Navigator.of(context).pop(kRecordSheetGoToSettings),
+          ),
+        ),
+        _Stage.error => _Tight(
+          child: _ErrorView(
+            message: _errorMessage,
+            onRetry: () {
+              // Failed while typing? Send them back to the keyboard, not the mic.
+              setState(() => _stage = _typed ? _Stage.type : _Stage.idle);
+            },
             onDiscard: () => Navigator.of(context).pop(),
           ),
-        _Stage.needsKey => const _Tight(child: _NeedsKeyView()),
-        _Stage.error => _Tight(
-            child: _ErrorView(
-              message: _errorMessage,
-              onRetry: () {
-                setState(() => _stage = _Stage.idle);
-              },
-              onDiscard: () => Navigator.of(context).pop(),
-            ),
-          ),
+        ),
       };
     }
 
@@ -229,13 +274,20 @@ class _SheetFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.9,
+    // viewInsets pushes the sheet clear of the on-screen keyboard when the
+    // typing view focuses the text field (it's 0 when no keyboard is open).
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SafeArea(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.9,
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 36),
+          child: child,
         ),
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 36),
-        child: child,
       ),
     );
   }
@@ -252,9 +304,7 @@ class _Tight extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 420,
-      child: Center(
-        child: SingleChildScrollView(child: child),
-      ),
+      child: Center(child: SingleChildScrollView(child: child)),
     );
   }
 }
@@ -304,7 +354,11 @@ class _IdleView extends StatelessWidget {
                 ),
               ],
             ),
-            child: const Icon(Icons.mic_rounded, color: AppColors.pot, size: 52),
+            child: const Icon(
+              Icons.mic_rounded,
+              color: AppColors.pot,
+              size: 52,
+            ),
           ),
         ),
         const SizedBox(height: 18),
@@ -319,6 +373,98 @@ class _IdleView extends StatelessWidget {
             key: ValueKey(tooShort),
             style: AppText.bodyMuted(fontSize: 13),
           ),
+        ),
+        const SizedBox(height: 24),
+        TextButton.icon(
+          onPressed: onType,
+          icon: const Icon(
+            Icons.keyboard_alt_outlined,
+            color: AppColors.smoke,
+            size: 18,
+          ),
+          label: const Text('Type instead'),
+          style: TextButton.styleFrom(foregroundColor: AppColors.smoke),
+        ),
+      ],
+    );
+  }
+}
+
+/// Quiet-day fallback: type what you ate or how you moved instead of
+/// speaking, and the same GPT pipeline parses it.
+class _TypeView extends StatefulWidget {
+  const _TypeView({required this.onBack, required this.onSubmit});
+
+  final VoidCallback onBack;
+  final ValueChanged<String> onSubmit;
+
+  @override
+  State<_TypeView> createState() => _TypeViewState();
+}
+
+class _TypeViewState extends State<_TypeView> {
+  final _controller = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final text = _controller.text.trim();
+    if (text.isEmpty || _submitting) return;
+    setState(() => _submitting = true);
+    widget.onSubmit(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Log by typing', style: AppText.headline()),
+        const SizedBox(height: 8),
+        Text(
+          'Noisy room or tired voice — just type what you ate '
+          'or how you moved.',
+          textAlign: TextAlign.center,
+          style: AppText.bodyMuted(),
+        ),
+        const SizedBox(height: 20),
+        TextField(
+          controller: _controller,
+          autofocus: true,
+          minLines: 3,
+          maxLines: 6,
+          textCapitalization: TextCapitalization.sentences,
+          style: AppText.body(),
+          decoration: const InputDecoration(
+            hintText: 'e.g. two plates of jollof rice and fried chicken',
+          ),
+          onSubmitted: (_) => _submit(),
+        ),
+        const SizedBox(height: 20),
+        FilledButton.icon(
+          onPressed: _submitting ? null : _submit,
+          icon: _submitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.smoke,
+                  ),
+                )
+              : const Icon(Icons.auto_awesome_rounded, size: 20),
+          label: Text(_submitting ? 'Parsing…' : 'Parse'),
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: widget.onBack,
+          child: const Text('Back to voice'),
         ),
       ],
     );
@@ -362,9 +508,7 @@ class _RecordingView extends StatelessWidget {
         SizedBox(
           height: 120,
           width: double.infinity,
-          child: CustomPaint(
-            painter: _LiveWavePainter(levels: levels),
-          ),
+          child: CustomPaint(painter: _LiveWavePainter(levels: levels)),
         ),
         const SizedBox(height: 24),
         Text('Release when you’re done', style: AppText.bodyMuted()),
@@ -446,11 +590,13 @@ class _LiveWavePainter extends CustomPainter {
 class _ConfirmView extends StatefulWidget {
   const _ConfirmView({
     required this.parsed,
+    required this.sourceLabel,
     required this.onSave,
     required this.onDiscard,
   });
 
   final ParsedLog parsed;
+  final String sourceLabel;
   final ValueChanged<ParsedLog> onSave;
   final VoidCallback onDiscard;
 
@@ -460,6 +606,7 @@ class _ConfirmView extends StatefulWidget {
 
 class _ConfirmViewState extends State<_ConfirmView> {
   late final List<MealItem> _items = List.of(widget.parsed.items);
+  late MealType _mealType = widget.parsed.mealType;
   late final List<TextEditingController> _qtyControllers = [
     for (final item in _items) TextEditingController(text: item.quantity),
   ];
@@ -503,6 +650,14 @@ class _ConfirmViewState extends State<_ConfirmView> {
     });
   }
 
+  static String _mealLabel(MealType type) => switch (type) {
+        MealType.breakfast => 'Breakfast',
+        MealType.lunch => 'Lunch',
+        MealType.dinner => 'Dinner',
+        MealType.snack => 'Snack',
+        MealType.meal => 'Meal',
+      };
+
   @override
   Widget build(BuildContext context) {
     final parsed = widget.parsed;
@@ -519,9 +674,33 @@ class _ConfirmViewState extends State<_ConfirmView> {
           ),
           const SizedBox(height: 6),
           Text(
-            'The words I heard: “${widget.parsed.summary}”',
+            '${widget.sourceLabel} “${widget.parsed.summary}”',
             style: AppText.bodyMuted(fontSize: 13),
           ),
+          if (isMeal) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final type in MealType.values)
+                  if (type != MealType.meal)
+                    ChoiceChip(
+                      label: Text(_mealLabel(type)),
+                      selected: _mealType == type,
+                      onSelected: (_) => setState(() => _mealType = type),
+                      backgroundColor: AppColors.barkRaised,
+                      selectedColor: AppColors.jollof,
+                      labelStyle: AppText.bodyMuted(
+                          fontSize: 13,
+                          color: _mealType == type
+                              ? AppColors.pot
+                              : AppColors.bone),
+                      side: const BorderSide(color: AppColors.ember),
+                    ),
+              ],
+            ),
+          ],
           const SizedBox(height: 18),
           if (isMeal) ...[
             for (var i = 0; i < _items.length; i++)
@@ -552,17 +731,20 @@ class _ConfirmViewState extends State<_ConfirmView> {
               Expanded(
                 flex: 2,
                 child: FilledButton.icon(
-                  onPressed: () => widget.onSave(isMeal
-                      ? ParsedLog(
-                          type: EntryType.meal,
-                          summary: parsed.summary,
-                          items: _items,
-                          calories: _calories,
-                          proteinG: _protein,
-                          carbsG: _carbs,
-                          fatG: _fat,
-                        )
-                      : parsed),
+                  onPressed: () => widget.onSave(
+                    isMeal
+                        ? ParsedLog(
+                            type: EntryType.meal,
+                            summary: parsed.summary,
+                            items: _items,
+                            calories: _calories,
+                            proteinG: _protein,
+                            carbsG: _carbs,
+                            fatG: _fat,
+                            mealType: _mealType,
+                          )
+                        : parsed,
+                  ),
                   icon: const Icon(Icons.check_rounded, size: 20),
                   label: const Text('Save'),
                 ),
@@ -607,11 +789,30 @@ class _ItemRow extends StatelessWidget {
                   Text(item.name, style: AppText.title(fontSize: 15)),
                   const SizedBox(height: 2),
                   Text(
-                    '${Formatters.kcal(item.calories)} kcal · '
-                    'P ${Formatters.grams(item.proteinG)} · '
-                    'C ${Formatters.grams(item.carbsG)} · '
-                    'F ${Formatters.grams(item.fatG)}',
+                    '${Formatters.kcal(item.calories)} kcal',
                     style: AppText.dataS(color: AppColors.smoke),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 6,
+                    children: [
+                      MacroPill(
+                        label: 'PROTEIN',
+                        value: '${Formatters.grams(item.proteinG)}g',
+                        color: MacroPill.proteinColor,
+                      ),
+                      MacroPill(
+                        label: 'CARBS',
+                        value: '${Formatters.grams(item.carbsG)}g',
+                        color: MacroPill.carbsColor,
+                      ),
+                      MacroPill(
+                        label: 'FAT',
+                        value: '${Formatters.grams(item.fatG)}g',
+                        color: MacroPill.fatColor,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -625,8 +826,10 @@ class _ItemRow extends StatelessWidget {
                 style: AppText.dataS(),
                 decoration: const InputDecoration(
                   isDense: true,
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                 ),
               ),
             ),
@@ -658,26 +861,41 @@ class _TotalsRow extends StatelessWidget {
         border: Border.all(color: AppColors.ember),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
             children: [
               Text('TOTAL', style: AppText.label()),
-              const SizedBox(height: 2),
-              Text('${Formatters.kcal(calories)} kcal',
-                  style: AppText.dataL(color: AppColors.jollof)),
+              const Spacer(),
+              Text(
+                '${Formatters.kcal(calories)} kcal',
+                style: AppText.dataL(color: AppColors.jollof),
+              ),
             ],
           ),
-          const Spacer(),
-          Text('P ${Formatters.grams(protein)}',
-              style: AppText.dataS(color: AppColors.smoke)),
-          const SizedBox(width: 12),
-          Text('C ${Formatters.grams(carbs)}',
-              style: AppText.dataS(color: AppColors.smoke)),
-          const SizedBox(width: 12),
-          Text('F ${Formatters.grams(fat)}',
-              style: AppText.dataS(color: AppColors.smoke)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 12,
+            runSpacing: 6,
+            children: [
+              MacroPill(
+                label: 'PROTEIN',
+                value: '${Formatters.grams(protein)}g',
+                color: MacroPill.proteinColor,
+              ),
+              MacroPill(
+                label: 'CARBS',
+                value: '${Formatters.grams(carbs)}g',
+                color: MacroPill.carbsColor,
+              ),
+              MacroPill(
+                label: 'FAT',
+                value: '${Formatters.grams(fat)}g',
+                color: MacroPill.fatColor,
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -700,8 +918,11 @@ class _ExerciseCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.directions_run_rounded,
-              color: AppColors.ugu, size: 32),
+          const Icon(
+            Icons.directions_run_rounded,
+            color: AppColors.ugu,
+            size: 32,
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -747,23 +968,24 @@ class _ErrorView extends StatelessWidget {
             color: Color(0x33E0563E),
             shape: BoxShape.circle,
           ),
-          child: const Icon(Icons.hearing_disabled_rounded,
-              color: AppColors.chili, size: 30),
+          child: const Icon(
+            Icons.hearing_disabled_rounded,
+            color: AppColors.chili,
+            size: 30,
+          ),
         ),
         const SizedBox(height: 20),
         Text('Didn’t catch that', style: AppText.headline()),
         const SizedBox(height: 8),
-        Text(
-          message,
-          textAlign: TextAlign.center,
-          style: AppText.bodyMuted(),
-        ),
+        Text(message, textAlign: TextAlign.center, style: AppText.bodyMuted()),
         const SizedBox(height: 24),
         Row(
           children: [
             Expanded(
               child: TextButton(
-                  onPressed: onDiscard, child: const Text('Discard')),
+                onPressed: onDiscard,
+                child: const Text('Discard'),
+              ),
             ),
             Expanded(
               flex: 2,
@@ -781,7 +1003,9 @@ class _ErrorView extends StatelessWidget {
 }
 
 class _NeedsKeyView extends StatelessWidget {
-  const _NeedsKeyView();
+  const _NeedsKeyView({required this.onGoToSettings});
+
+  final VoidCallback onGoToSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -796,8 +1020,11 @@ class _NeedsKeyView extends StatelessWidget {
             color: Color(0x33F2B53C),
             shape: BoxShape.circle,
           ),
-          child: const Icon(Icons.key_rounded,
-              color: AppColors.plantain, size: 30),
+          child: const Icon(
+            Icons.key_rounded,
+            color: AppColors.plantain,
+            size: 30,
+          ),
         ),
         const SizedBox(height: 20),
         Text('Your key goes here first', style: AppText.headline()),
@@ -810,7 +1037,7 @@ class _NeedsKeyView extends StatelessWidget {
         ),
         const SizedBox(height: 24),
         FilledButton.icon(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: onGoToSettings,
           icon: const Icon(Icons.settings_rounded, size: 20),
           label: const Text('Go to Settings'),
         ),
@@ -818,7 +1045,3 @@ class _NeedsKeyView extends StatelessWidget {
     );
   }
 }
-
-
-
-

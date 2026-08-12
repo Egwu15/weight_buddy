@@ -6,6 +6,7 @@ import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
+import '../../utils/periods.dart';
 import '../record/record_sheet.dart';
 import '../weigh/weight_card.dart';
 import '../weigh/weight_history_screen.dart';
@@ -18,16 +19,28 @@ import '../widgets/timeline_tile.dart';
 /// The single screen that does the job: today, at a glance, with the mic
 /// a thumb away.
 class TodayScreen extends ConsumerWidget {
-  const TodayScreen({super.key, required this.onOpenSettings});
+  const TodayScreen({
+    super.key,
+    required this.onOpenSettings,
+    required this.onOpenMonth,
+  });
 
   final VoidCallback onOpenSettings;
+
+  /// Called when the period glance (week / month left) is tapped so the shell
+  /// can jump to the Month tab for the full period view.
+  final VoidCallback onOpenMonth;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final day = ref.watch(selectedDayProvider);
     final logsAsync = ref.watch(dayLogsProvider);
     final totals = ref.watch(dayTotalsProvider);
+    final maintenance =
+        ref.watch(appSettingsProvider).value?.maintenanceKcal ?? 2200;
     final logs = logsAsync.value ?? const <LogEntry>[];
+    final weekAsync = ref.watch(weekTotalsProvider(startOfWeek(day)));
+    final monthAsync = ref.watch(monthPeriodTotalsProvider(day));
 
     return Scaffold(
       body: SafeArea(
@@ -81,7 +94,21 @@ class TodayScreen extends ConsumerWidget {
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                sliver: SliverToBoxAdapter(child: LedgerCard(totals: totals)),
+                sliver: SliverToBoxAdapter(
+                    child: LedgerCard(
+                  totals: totals,
+                  maintenanceKcal: maintenance,
+                )),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                sliver: SliverToBoxAdapter(
+                  child: _PeriodGlance(
+                    week: weekAsync.value,
+                    month: monthAsync.value,
+                    onTap: onOpenMonth,
+                  ),
+                ),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -139,16 +166,23 @@ class TodayScreen extends ConsumerWidget {
   }
 
   Future<void> _openRecorder(BuildContext context, WidgetRef ref) async {
-    final saved = await showModalBottomSheet<bool>(
+    final result = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       builder: (_) => const RecordSheet(),
     );
-    if (saved == true && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Logged')),
-      );
+    if (!context.mounted) return;
+    switch (result) {
+      case kRecordSheetLogged:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Logged')),
+        );
+      case kRecordSheetGoToSettings:
+        // The record sheet asked for the key; jump to the Settings tab.
+        onOpenSettings();
+      case _:
+        break;
     }
   }
 
@@ -211,7 +245,14 @@ class _DateStrip extends ConsumerWidget {
                 color: AppColors.smoke, size: 28),
           ),
           const SizedBox(width: 8),
-          Text(Formatters.dayHeader(day), style: AppText.title()),
+          Flexible(
+            child: Text(
+              Formatters.dayHeader(day),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.title(),
+            ),
+          ),
           const SizedBox(width: 8),
           if (!isToday)
             TextButton(
@@ -250,7 +291,7 @@ class _EmptyTimeline extends StatelessWidget {
             Text('Nothing logged today', style: AppText.title()),
             const SizedBox(height: 4),
             Text(
-              'Hold the mic and say what you ate, or how you moved.',
+              'Hold the mic and say what you ate — or type it.',
               textAlign: TextAlign.center,
               style: AppText.bodyMuted(),
             ),
@@ -269,5 +310,75 @@ class _EmptyTimeline extends StatelessWidget {
 
 extension on DateTime {
   DateTime get dateOnly => DateTime(year, month, day);
+}
+
+/// The week / month glance under the daily ledger: how many calories are left
+/// in each period, tappable through to the Month tab for the full view.
+class _PeriodGlance extends StatelessWidget {
+  const _PeriodGlance({required this.week, required this.month, required this.onTap});
+
+  final PeriodTotals? week;
+  final PeriodTotals? month;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: _GlanceCell(label: 'WEEK LEFT', left: week?.leftKcal),
+              ),
+              Container(
+                width: 1,
+                height: 36,
+                color: AppColors.ember,
+              ),
+              Expanded(
+                child: _GlanceCell(label: 'MONTH LEFT', left: month?.leftKcal),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppColors.smoke, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GlanceCell extends StatelessWidget {
+  const _GlanceCell({required this.label, required this.left});
+
+  final String label;
+  final double? left;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = left;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: AppText.label(color: AppColors.smoke)),
+        const SizedBox(height: 4),
+        Text(
+          value == null ? '–' : Formatters.kcal(value),
+          style: AppText.dataM(
+            color: value == null
+                ? AppColors.smoke
+                : (value >= 0 ? AppColors.ugu : AppColors.jollof),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text('kcal', style: AppText.label(color: AppColors.smoke)),
+      ],
+    );
+  }
 }
 

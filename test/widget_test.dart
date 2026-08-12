@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -15,6 +18,9 @@ import 'package:weight_buddy/models/log_entry.dart';
 import 'package:weight_buddy/models/memory.dart';
 import 'package:weight_buddy/models/weigh_in.dart';
 import 'package:weight_buddy/providers/providers.dart';
+import 'package:weight_buddy/theme/app_colors.dart';
+import 'package:weight_buddy/theme/app_theme.dart';
+import 'package:weight_buddy/ui/widgets/ledger_card.dart';
 import 'package:weight_buddy/utils/streaks.dart';
 
 class _TestSettingsController extends SettingsController {
@@ -34,7 +40,24 @@ class _KeyedSettingsController extends SettingsController {
 /// Default targets so widget tests never touch the database plugin.
 class _TestAppSettingsController extends AppSettingsController {
   @override
-  Future<AppSettingsData> build() async => const AppSettingsData();
+  Future<AppSettingsData> build() async =>
+      const AppSettingsData(profileCompleted: true);
+}
+
+/// A brand-new install — no profile yet, so the shell shows onboarding.
+/// Saves update state in-memory only, so widget tests never block on real
+/// database I/O inside pumpAndSettle.
+class _FreshAppSettingsController extends AppSettingsController {
+  AppSettingsData _data = const AppSettingsData();
+
+  @override
+  Future<AppSettingsData> build() async => _data;
+
+  @override
+  Future<void> save(AppSettingsData data) async {
+    _data = data;
+    state = AsyncData(data);
+  }
 }
 
 /// In-memory controller so widget tests never touch platform plugins.
@@ -60,6 +83,9 @@ class _FakeLogsController extends DayLogsController {
 /// In-memory weigh-ins so widget tests never touch platform plugins.
 class _FakeWeighInsController extends WeighInsController {
   List<WeighIn> _weighIns = const [];
+
+  /// The recorded list, for assertions.
+  List<WeighIn> get items => _weighIns;
 
   @override
   Future<List<WeighIn>> build() async => _weighIns;
@@ -193,6 +219,9 @@ void main() {
       expect(find.text('EATEN'), findsOneWidget);
       expect(find.text('BURNED'), findsOneWidget);
       expect(find.text('NET'), findsOneWidget);
+      // Maintenance budget left (default 2200, nothing eaten yet).
+      expect(find.text('LEFT'), findsOneWidget);
+      expect(find.text('2,200'), findsOneWidget);
 
       await tester.scrollUntilVisible(
         find.text('Nothing logged today'),
@@ -217,7 +246,126 @@ void main() {
       expect(find.text('Macros'), findsOneWidget);
     });
 
-    testWidgets('record sheet asks for the key first', (tester) async {
+    testWidgets('first launch shows onboarding; skipping reaches the tabs',
+        (tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(_TestSettingsController.new),
+          dayLogsProvider.overrideWith(_FakeLogsController.new),
+          appSettingsProvider.overrideWith(_FreshAppSettingsController.new),
+          weighInsProvider.overrideWith(_FakeWeighInsController.new),
+          chatMessagesProvider.overrideWith(_FakeChatController.new),
+          memoriesProvider.overrideWith(_FakeMemoriesController.new),
+          exercisesProvider.overrideWith(_FakeExercisesController.new),
+          monthTotalsProvider.overrideWith(
+              (ref, month) async => const <String, LogTotals>{}),
+          streakProvider.overrideWith(
+              (ref) async => const Streaks(logging: 4, onPlan: 3)),
+        ],
+        child: const WeightBuddyApp(),
+      ));
+      await tester.pumpAndSettle();
+
+      // The questionnaire, not the tabs. 'Start tracking' lives at the bottom
+      // of the tall list, so assert on what's on screen first.
+      expect(find.text('Skip for now'), findsOneWidget);
+      expect(find.text('A few questions, then we’re off'), findsOneWidget);
+      expect(find.text('Today'), findsNothing);
+
+      await tester.tap(find.text('Skip for now'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Today'), findsOneWidget);
+      expect(find.text('Skip for now'), findsNothing);
+    });
+
+    testWidgets('onboarding estimates maintenance, saves it and plants a '
+        'weigh-in', (tester) async {
+      // Tall viewport so the whole single-screen questionnaire is visible —
+      // no scrolling choreography needed in the test.
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final weighIns = _FakeWeighInsController();
+
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(_TestSettingsController.new),
+          dayLogsProvider.overrideWith(_FakeLogsController.new),
+          appSettingsProvider.overrideWith(_FreshAppSettingsController.new),
+          weighInsProvider.overrideWith(() => weighIns),
+          chatMessagesProvider.overrideWith(_FakeChatController.new),
+          memoriesProvider.overrideWith(_FakeMemoriesController.new),
+          exercisesProvider.overrideWith(_FakeExercisesController.new),
+          monthTotalsProvider.overrideWith(
+              (ref, month) async => const <String, LogTotals>{}),
+          streakProvider.overrideWith(
+              (ref) async => const Streaks(logging: 4, onPlan: 3)),
+        ],
+        child: const WeightBuddyApp(),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Skip for now'), findsOneWidget);
+
+      // Male, 70 kg, 175 cm, 25 y, lightly active -> BMR 1673.75, ×1.375 =
+      // 2301 kcal/day.
+      await tester.enterText(find.widgetWithText(TextField, 'Height'), '175');
+      await tester.enterText(find.widgetWithText(TextField, 'Weight'), '70');
+      await tester.enterText(find.widgetWithText(TextField, 'Age'), '25');
+
+      await tester.tap(find.text('Male'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Lightly active'));
+      await tester.pumpAndSettle();
+
+      // The live estimate appears before saving.
+      expect(find.text('2301 kcal/day'), findsOneWidget);
+
+      await tester.tap(find.text('Start tracking'));
+      await tester.pumpAndSettle();
+
+      // The shell swapped to the tabs, and the estimate is the new budget.
+      expect(find.text('Today'), findsOneWidget);
+      expect(find.text('Start tracking'), findsNothing);
+      expect(find.text('2,301'), findsOneWidget);
+
+      // Today's first weigh-in was planted for the estimate.
+      expect(weighIns.items, hasLength(1));
+      expect(weighIns.items.single.weightKg, closeTo(70, 0.001));
+    });
+
+    testWidgets('ledger LEFT turns red when over the maintenance budget',
+        (tester) async {
+      GoogleFonts.config.allowRuntimeFetching = false;
+      // A 320dp phone: all four readouts must fit on one line.
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+            child: LedgerCard(
+              totals: const LogTotals(eatenKcal: 2500, burnedKcal: 100),
+              maintenanceKcal: 2200,
+            ),
+          ),
+        ),
+      ));
+
+      // net = 2400, so 200 over budget -> LEFT reads -200 in jollof.
+      expect(tester.takeException(), isNull);
+      expect(find.text('LEFT'), findsOneWidget);
+      expect(find.text('-200'), findsOneWidget);
+      final value = tester.widget<Text>(find.text('-200'));
+      expect(value.style?.color, AppColors.jollof);
+    });
+
+    testWidgets('record sheet asks for the key first and can jump to settings',
+        (tester) async {
       await tester.pumpWidget(await _testApp());
       await tester.pumpAndSettle();
 
@@ -226,6 +374,11 @@ void main() {
 
       expect(find.text('Your key goes here first'), findsOneWidget);
       expect(find.text('Hold to speak'), findsNothing);
+
+      // "Go to Settings" actually lands on the Settings tab.
+      await tester.tap(find.text('Go to Settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('Your OpenAI key'), findsOneWidget);
     });
 
     testWidgets('settings screen shows the BYOK form', (tester) async {
@@ -240,6 +393,17 @@ void main() {
       expect(find.text('Targets'), findsOneWidget);
 
       await tester.scrollUntilVisible(
+        find.text('Maintenance calories / day'),
+        120,
+        scrollable: find
+            .descendant(
+                of: find.byType(ListView),
+                matching: find.byType(Scrollable))
+            .first,
+      );
+      expect(find.text('Maintenance calories / day'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
         find.text('Save changes'),
         120,
         scrollable: find
@@ -249,7 +413,6 @@ void main() {
             .first,
       );
       expect(find.text('Save changes'), findsOneWidget);
-      expect(find.text('Maintenance calories / day'), findsOneWidget);
 
       await tester.scrollUntilVisible(
         find.text('Delete all entries'),
@@ -261,6 +424,8 @@ void main() {
             .first,
       );
       expect(find.text('Delete all entries'), findsOneWidget);
+      // Demo seeding is a debug-only affordance (kDebugMode is true in tests).
+      expect(find.text('Load demo data'), findsOneWidget);
     });
 
     testWidgets('saved key is masked and not revealable', (tester) async {
@@ -422,14 +587,107 @@ void main() {
         expect(dup, isNull);
         expect(await db.exercises(), hasLength(1));
 
-        // Wipe clears all user data but keeps settings.
+        // v3: meal_type round-trips and day maintenance is snapshotted.
+        await db.insertLog(LogEntry(
+          timestamp: now,
+          type: EntryType.meal,
+          summary: 'Tagged meal',
+          calories: 300,
+          proteinG: 10,
+          carbsG: 40,
+          fatG: 5,
+          rawTranscript: '',
+          mealType: MealType.lunch,
+        ), maintenanceKcal: 2350);
+        final tagged = (await db.allLogs()).single;
+        expect(tagged.mealType, MealType.lunch);
+        expect(await db.dayMaintenance(DateTime.now()), 2350);
+
+        // Wipe clears all user data (snapshots included) but keeps settings.
         await db.wipeAllData();
         expect(await db.weighIns(), isEmpty);
         expect(await db.memories(), isEmpty);
         expect(await db.exercises(), isEmpty);
         expect(await db.getSetting('maintenance_kcal'), '2400');
+        expect(await db.dayMaintenance(DateTime.now()), isNull);
 
         await db.close();
+      });
+    });
+
+    testWidgets('a v2 database migrates to v3 (meal_type + day maintenance)',
+        (tester) async {
+      await tester.runAsync(() async {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfi;
+        final dir = Directory.systemTemp;
+        final path = p.join(dir.path, 'wb_migrate_test_${DateTime.now().millisecondsSinceEpoch}.db');
+
+        // Build a v2 file by hand: logs without the meal_type column.
+        final raw = await databaseFactory.openDatabase(
+          path,
+          options: OpenDatabaseOptions(
+            version: 2,
+            onCreate: (db, v) async {
+              await db.execute('''
+                CREATE TABLE logs (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  timestamp INTEGER NOT NULL,
+                  type TEXT NOT NULL,
+                  summary TEXT NOT NULL,
+                  calories REAL NOT NULL DEFAULT 0,
+                  protein_g REAL NOT NULL DEFAULT 0,
+                  carbs_g REAL NOT NULL DEFAULT 0,
+                  fat_g REAL NOT NULL DEFAULT 0,
+                  raw_transcript TEXT NOT NULL DEFAULT '',
+                  items TEXT NOT NULL DEFAULT '[]'
+                )
+              ''');
+              await db.insert('logs', {
+                'timestamp': DateTime.now().millisecondsSinceEpoch,
+                'type': 'meal',
+                'summary': 'Legacy meal',
+                'calories': 100,
+                'protein_g': 1,
+                'carbs_g': 1,
+                'fat_g': 1,
+                'raw_transcript': '',
+                'items': '[]',
+              });
+            },
+          ),
+        );
+        await raw.close();
+
+        final db = await AppDatabase.open(path: path);
+        final logs = await db.allLogs();
+        expect(logs, hasLength(1));
+        // Legacy rows default to the generic meal type.
+        expect(logs.first.mealType, MealType.meal);
+
+        await db.insertLog(LogEntry(
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          type: EntryType.meal,
+          summary: 'New lunch',
+          calories: 300,
+          proteinG: 10,
+          carbsG: 40,
+          fatG: 5,
+          rawTranscript: '',
+          mealType: MealType.lunch,
+        ), maintenanceKcal: 2400);
+        final all = await db.allLogs();
+        expect(all, hasLength(2));
+        final legacy = all.firstWhere((e) => e.summary == 'Legacy meal');
+        final lunch = all.firstWhere((e) => e.summary == 'New lunch');
+        expect(legacy.mealType, MealType.meal);
+        expect(lunch.mealType, MealType.lunch);
+        expect(await db.dayMaintenance(DateTime.now()), 2400);
+
+        await db.close();
+        try {
+          await File(path).delete();
+        } catch (_) {}
       });
     });
 
@@ -486,6 +744,16 @@ void main() {
         ..remove(DateTime(2026, 8, 11));
       expect(computeStreaks(gapped, today, 2200).logging, 1);
       expect(computeStreaks(gapped, today, 2200).onPlan, 1);
+
+      // A per-day maintenance snapshot judges that day by its own target:
+      // 2026-08-11 was 2600 kcal but under its 2800 snapshot, so it counts.
+      final snapshotStreaks = computeStreaks(
+        perDay,
+        today,
+        2200,
+        dayMaintenance: {DateTime(2026, 8, 11): 2800},
+      );
+      expect(snapshotStreaks.onPlan, 3);
     });
 
     test('coach context includes data, memories and saved exercises', () {
@@ -624,6 +892,29 @@ void main() {
 
       expect(find.text('How do I progress?'), findsOneWidget);
       expect(find.text('Add 2 reps weekly.'), findsOneWidget);
+    });
+
+    testWidgets('coach header fits on a narrow phone (no overflow)',
+        (tester) async {
+      // A 320 dp wide phone — the width that used to overflow the header by
+      // ~39 px because the subtitle was fixed-width next to three icon
+      // buttons. Any RenderFlex overflow here fails the test.
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(await _testApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Coach'));
+      await tester.pumpAndSettle();
+
+      // The header must fit without overflowing at this width.
+      expect(find.text('coach'), findsOneWidget);
+      expect(find.text('sees today + 7 days + weight'), findsOneWidget);
+      // The welcome card is in view (the chips sit below the fold on a
+      // short screen and are lazily skipped, which is fine).
+      expect(find.text('Your coach, with your numbers'), findsOneWidget);
     });
   });
 }

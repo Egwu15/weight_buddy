@@ -6,6 +6,7 @@ import 'data/app_database.dart';
 import 'data/reminder_service.dart';
 import 'providers/providers.dart';
 import 'theme/app_theme.dart';
+import 'utils/nudge_message.dart';
 import 'ui/app_shell.dart';
 
 Future<void> main() async {
@@ -16,6 +17,8 @@ Future<void> main() async {
 
 /// Re-arms the daily log reminder from persisted settings. Android does not
 /// keep scheduled notifications across reboots, so this runs on every launch.
+/// The nudge is only armed when nothing has been logged today — if today
+/// already has entries, any pending notification is cancelled instead.
 Future<void> _armDailyReminder() async {
   try {
     final db = await AppDatabase.open();
@@ -39,9 +42,19 @@ Future<void> _armDailyReminder() async {
       // Fall back to the plugin default.
     }
     await service.init(timezoneName: tzName);
+
+    final todayLogs = await db.logsForDay(DateTime.now());
+    final message = nudgeMessage(todayLogs);
+    if (message == null) {
+      // The day looks complete — nothing left to nudge about.
+      await service.cancel();
+      await db.close();
+      return;
+    }
     await service.scheduleDaily(
       hour: int.tryParse(parts[0]) ?? 20,
       minute: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
+      message: message,
     );
     await db.close();
   } catch (_) {

@@ -42,7 +42,7 @@ class RecordDock extends StatelessWidget {
                     Text('Log by voice', style: AppText.title()),
                     const SizedBox(height: 2),
                     Text(
-                      'Say what you ate or how you moved',
+                      'Say what you ate or type it',
                       style: AppText.bodyMuted(fontSize: 13),
                     ),
                   ],

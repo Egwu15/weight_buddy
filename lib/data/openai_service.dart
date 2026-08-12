@@ -18,6 +18,7 @@ class ParsedLog {
     this.fatG = 0,
     this.activity,
     this.durationMinutes,
+    this.mealType = MealType.meal,
   });
 
   final EntryType type;
@@ -30,6 +31,10 @@ class ParsedLog {
   final String? activity;
   final double? durationMinutes;
 
+  /// breakfast/lunch/dinner/snack when [type] is a meal (default for
+  /// exercises and legacy parses).
+  final MealType mealType;
+
   LogEntry toEntry({required int timestamp, required String rawTranscript}) {
     return LogEntry(
       timestamp: timestamp,
@@ -41,6 +46,7 @@ class ParsedLog {
       fatG: fatG,
       rawTranscript: rawTranscript,
       items: items,
+      mealType: mealType,
     );
   }
 }
@@ -172,7 +178,7 @@ class OpenAIService {
         'messages': [
           {
             'role': 'system',
-            'content': _systemPrompt,
+            'content': _systemPromptWithTime(),
           },
           {'role': 'user', 'content': transcript},
         ],
@@ -397,7 +403,18 @@ class OpenAIService {
       proteinG: _num(json['total_protein_g']),
       carbsG: _num(json['total_carbs_g']),
       fatG: _num(json['total_fat_g']),
+      mealType: MealType.fromApiName((json['meal_type'] as String?) ?? 'meal'),
     );
+  }
+
+  static String _systemPromptWithTime() {
+    final now = DateTime.now();
+    final h = now.hour.toString().padLeft(2, '0');
+    final m = now.minute.toString().padLeft(2, '0');
+    return 'The current local time is $h:$m. Use it to classify each food '
+        'entry as breakfast, lunch, dinner or snack (a snack is something '
+        'small eaten between meals). Exercises have no meal type (null). '
+        '$_systemPrompt';
   }
 
   static double _num(dynamic v) => (v as num?)?.toDouble() ?? 0;
@@ -418,6 +435,7 @@ were not mentioned. Use the schema exactly. Return JSON only.''';
     'required': [
       'entry_type',
       'summary',
+      'meal_type',
       'items',
       'total_calories',
       'total_protein_g',
@@ -430,6 +448,10 @@ were not mentioned. Use the schema exactly. Return JSON only.''';
     'properties': {
       'entry_type': {'enum': ['meal', 'exercise'], 'type': 'string'},
       'summary': {'type': 'string'},
+      'meal_type': {
+        'type': ['string', 'null'],
+        'enum': ['breakfast', 'lunch', 'dinner', 'snack', null],
+      },
       'items': {
         'type': 'array',
         'items': {

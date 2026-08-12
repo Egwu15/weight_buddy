@@ -21,6 +21,7 @@ void main() {
                   'content': jsonEncode({
                     'entry_type': 'meal',
                     'summary': 'Jollof rice and chicken',
+                    'meal_type': 'lunch',
                     'items': [
                       {
                         'name': 'Jollof Rice',
@@ -50,6 +51,7 @@ void main() {
       final service = OpenAIService(client: client, apiKey: 'sk-test');
       final parsed = await service.parseTranscript('I had jollof rice');
       expect(parsed.type, EntryType.meal);
+      expect(parsed.mealType, MealType.lunch);
       expect(parsed.calories, 700);
       expect(parsed.items, hasLength(1));
       expect(parsed.items.first.name, 'Jollof Rice');
@@ -65,6 +67,7 @@ void main() {
                   'content': jsonEncode({
                     'entry_type': 'exercise',
                     'summary': '30 min treadmill run',
+                    'meal_type': null,
                     'items': <Object>[],
                     'total_calories': 0,
                     'total_protein_g': 0,

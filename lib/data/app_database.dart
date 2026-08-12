@@ -21,7 +21,7 @@ class AppDatabase {
   final Database _db;
 
   static const _dbName = 'weight_buddy.db';
-  static const _dbVersion = 2;
+  static const _dbVersion = 3;
 
   /// Opens (and migrates) the local database.
   ///
@@ -40,10 +40,14 @@ class AppDatabase {
         onCreate: (db, version) async {
           await _createV1(db);
           await _createV2(db);
+          await _createV3(db);
         },
         onUpgrade: (db, oldVersion, newVersion) async {
           if (oldVersion < 2) {
             await _createV2(db);
+          }
+          if (oldVersion < 3) {
+            await _createV3Migration(db);
           }
         },
       ),
@@ -63,7 +67,8 @@ class AppDatabase {
         carbs_g REAL NOT NULL DEFAULT 0,
         fat_g REAL NOT NULL DEFAULT 0,
         raw_transcript TEXT NOT NULL DEFAULT '',
-        items TEXT NOT NULL DEFAULT '[]'
+        items TEXT NOT NULL DEFAULT '[]',
+        meal_type TEXT NOT NULL DEFAULT 'meal'
       )
     ''');
     await db.execute('CREATE INDEX idx_logs_timestamp ON logs (timestamp)');
@@ -136,12 +141,33 @@ class AppDatabase {
     );
   }
 
+  /// v3: adds `meal_type` to logs and the per-day maintenance snapshot table.
+  static Future<void> _createV3Migration(Database db) async {
+    await db.execute(
+      "ALTER TABLE logs ADD COLUMN meal_type TEXT NOT NULL DEFAULT 'meal'",
+    );
+    await _createV3(db);
+  }
+
+  static Future<void> _createV3(Database db) async {
+    await db.execute('''
+      CREATE TABLE day_maintenance (
+        day INTEGER PRIMARY KEY,
+        maintenance_kcal REAL NOT NULL
+      )
+    ''');
+  }
+
   // ---------------------------------------------------------------------
   // Logs
   // ---------------------------------------------------------------------
 
-  Future<int> insertLog(LogEntry entry) async {
-    return _db.insert('logs', entry.toMap());
+  Future<int> insertLog(LogEntry entry, {double? maintenanceKcal}) async {
+    final id = await _db.insert('logs', entry.toMap());
+    if (maintenanceKcal != null) {
+      await _setDayMaintenance(entry.timestamp, maintenanceKcal);
+    }
+    return id;
   }
 
   Future<List<LogEntry>> logsForDay(DateTime day) async {
@@ -167,6 +193,19 @@ class AppDatabase {
     return rows.map(LogEntry.fromMap).toList();
   }
 
+  /// All logs in the half-open local-day range [start, end).
+  Future<List<LogEntry>> logsBetween(DateTime start, DateTime end) async {
+    final s = DateTime(start.year, start.month, start.day).millisecondsSinceEpoch;
+    final e = DateTime(end.year, end.month, end.day).millisecondsSinceEpoch;
+    final rows = await _db.query(
+      'logs',
+      where: 'timestamp >= ? AND timestamp < ?',
+      whereArgs: [s, e],
+      orderBy: 'timestamp ASC',
+    );
+    return rows.map(LogEntry.fromMap).toList();
+  }
+
   Future<List<LogEntry>> allLogs() async {
     final rows = await _db.query('logs', orderBy: 'timestamp DESC');
     return rows.map(LogEntry.fromMap).toList();
@@ -174,6 +213,53 @@ class AppDatabase {
 
   Future<void> deleteLog(int id) async {
     await _db.delete('logs', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Records the maintenance target in effect when [timestampMillis] was
+  /// logged (latest-wins per day), so the calendar and streaks can judge a
+  /// day by the target it was actually logged under.
+  Future<void> _setDayMaintenance(int timestampMillis, double kcal) async {
+    final day = DateTime.fromMillisecondsSinceEpoch(timestampMillis).toLocal();
+    final dayMs = DateTime(day.year, day.month, day.day).millisecondsSinceEpoch;
+    await _db.insert(
+      'day_maintenance',
+      {'day': dayMs, 'maintenance_kcal': kcal},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// The maintenance snapshot for a local day, or null when nothing was
+  /// logged that day (and therefore no snapshot exists).
+  Future<double?> dayMaintenance(DateTime day) async {
+    final dayMs = DateTime(day.year, day.month, day.day).millisecondsSinceEpoch;
+    final rows = await _db.query(
+      'day_maintenance',
+      where: 'day = ?',
+      whereArgs: [dayMs],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return (rows.first['maintenance_kcal'] as num).toDouble();
+  }
+
+  /// Maintenance snapshots for every day in the local-day range [start, end),
+  /// keyed by local-midnight millis.
+  Future<Map<int, double>> dayMaintenanceBetween(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final s = DateTime(start.year, start.month, start.day).millisecondsSinceEpoch;
+    final e = DateTime(end.year, end.month, end.day).millisecondsSinceEpoch +
+        const Duration(days: 1).inMilliseconds;
+    final rows = await _db.query(
+      'day_maintenance',
+      where: 'day >= ? AND day < ?',
+      whereArgs: [s, e],
+    );
+    return {
+      for (final r in rows)
+        (r['day'] as num).toInt(): (r['maintenance_kcal'] as num).toDouble(),
+    };
   }
 
   Future<void> deleteAllLogs() async {
@@ -346,6 +432,25 @@ class AppDatabase {
   }
 
   // ---------------------------------------------------------------------
+  // First-run detection
+  // ---------------------------------------------------------------------
+
+  /// True when the user has already recorded anything (logs or weigh-ins).
+  /// Used to tell existing installs apart from a brand-new one so the first
+  /// run onboarding only greets people who actually need it.
+  Future<bool> hasAnyData() async {
+    final logs = Sqflite.firstIntValue(
+          await _db.rawQuery('SELECT COUNT(*) FROM logs'),
+        ) ??
+        0;
+    final weighIns = Sqflite.firstIntValue(
+          await _db.rawQuery('SELECT COUNT(*) FROM weigh_ins'),
+        ) ??
+        0;
+    return logs > 0 || weighIns > 0;
+  }
+
+  // ---------------------------------------------------------------------
   // Whole-app wipe
   // ---------------------------------------------------------------------
 
@@ -356,6 +461,7 @@ class AppDatabase {
     await _db.delete('chat_messages');
     await _db.delete('memories');
     await _db.delete('exercise_recommendations');
+    await _db.delete('day_maintenance');
   }
 
   Future<void> close() => _db.close();

@@ -4,6 +4,7 @@ import '../../models/log_entry.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
+import 'macro_pill.dart';
 
 /// One row in the day's timeline.
 class TimelineTile extends StatelessWidget {
@@ -59,15 +60,38 @@ class TimelineTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 3),
-                  Text(
-                    isMeal
-                        ? '${Formatters.kcal(entry.calories)} kcal · '
-                            'P ${Formatters.grams(entry.proteinG)} · '
-                            'C ${Formatters.grams(entry.carbsG)} · '
-                            'F ${Formatters.grams(entry.fatG)}'
-                        : '${Formatters.kcal(entry.calories)} kcal burned',
-                    style: AppText.dataS(color: AppColors.smoke),
-                  ),
+                  if (isMeal)
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          '${Formatters.kcal(entry.calories)} kcal',
+                          style: AppText.dataS(color: AppColors.smoke),
+                        ),
+                        MacroPill(
+                          label: 'PROTEIN',
+                          value: '${Formatters.grams(entry.proteinG)}g',
+                          color: MacroPill.proteinColor,
+                        ),
+                        MacroPill(
+                          label: 'CARBS',
+                          value: '${Formatters.grams(entry.carbsG)}g',
+                          color: MacroPill.carbsColor,
+                        ),
+                        MacroPill(
+                          label: 'FAT',
+                          value: '${Formatters.grams(entry.fatG)}g',
+                          color: MacroPill.fatColor,
+                        ),
+                      ],
+                    )
+                  else
+                    Text(
+                      '${Formatters.kcal(entry.calories)} kcal burned',
+                      style: AppText.dataS(color: AppColors.smoke),
+                    ),
                 ],
               ),
             ),

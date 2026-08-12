@@ -14,7 +14,6 @@ class ReminderService {
   static const _channelId = 'daily_log_reminder';
   static const _notificationId = 1001;
   static const _title = 'weightbuddy';
-  static const _body = 'Time to log — what did you eat today?';
 
   bool _initialized = false;
 
@@ -63,7 +62,11 @@ class ReminderService {
 
   /// Schedules a daily reminder at [hour]:[minute] in the device's local
   /// time. Calling again replaces the existing schedule.
-  Future<void> scheduleDaily({required int hour, required int minute}) async {
+  Future<void> scheduleDaily({
+    required int hour,
+    required int minute,
+    String message = 'Time to log — what did you eat today?',
+  }) async {
     await _ensureInit();
     final now = tz.TZDateTime.now(tz.local);
     var scheduled =
@@ -74,7 +77,7 @@ class ReminderService {
     await _plugin.zonedSchedule(
       _notificationId,
       _title,
-      _body,
+      message,
       scheduled,
       const NotificationDetails(
         android: AndroidNotificationDetails(
