@@ -8,6 +8,7 @@ class AppSettingsData {
   const AppSettingsData({
     this.maintenanceKcal = 2200,
     this.weightUnit = 'kg',
+    this.heightUnit = 'cm',
     this.reminderEnabled = false,
     this.reminderTime = const TimeOfDay(hour: 20, minute: 0),
     this.memoryEnabled = true,
@@ -24,6 +25,10 @@ class AppSettingsData {
 
   /// 'kg' or 'lb'.
   final String weightUnit;
+
+  /// Display unit for height input ('cm' or 'ft'); the height itself is
+  /// always stored in centimetres in [heightCm].
+  final String heightUnit;
 
   final bool reminderEnabled;
   final TimeOfDay reminderTime;
@@ -43,8 +48,8 @@ class AppSettingsData {
 
   final ActivityLevel? activityLevel;
 
-  /// True once the first-run onboarding has been completed (or skipped), so
-  /// the shell stops showing the questionnaire.
+  /// True once the first-run onboarding has been completed, so the shell
+  /// stops showing the questionnaire.
   final bool profileCompleted;
 
   /// The whole profile is present, so the maintenance estimate can be made.
@@ -56,6 +61,7 @@ class AppSettingsData {
   AppSettingsData copyWith({
     double? maintenanceKcal,
     String? weightUnit,
+    String? heightUnit,
     bool? reminderEnabled,
     TimeOfDay? reminderTime,
     bool? memoryEnabled,
@@ -68,6 +74,7 @@ class AppSettingsData {
       AppSettingsData(
         maintenanceKcal: maintenanceKcal ?? this.maintenanceKcal,
         weightUnit: weightUnit ?? this.weightUnit,
+        heightUnit: heightUnit ?? this.heightUnit,
         reminderEnabled: reminderEnabled ?? this.reminderEnabled,
         reminderTime: reminderTime ?? this.reminderTime,
         memoryEnabled: memoryEnabled ?? this.memoryEnabled,

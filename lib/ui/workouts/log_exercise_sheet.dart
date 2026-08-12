@@ -7,6 +7,7 @@ import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
+import '../widgets/app_toast.dart';
 
 enum _Stage { processing, parsed, error }
 
@@ -89,9 +90,7 @@ class _LogExerciseSheetState extends ConsumerState<LogExerciseSheet> {
         );
     if (!mounted) return;
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Logged as exercise')),
-    );
+    AppToast.show(context, 'Logged as exercise');
   }
 
   @override

@@ -246,8 +246,14 @@ void main() {
       expect(find.text('Macros'), findsOneWidget);
     });
 
-    testWidgets('first launch shows onboarding; skipping reaches the tabs',
-        (tester) async {
+    testWidgets('first launch shows onboarding; the tabs stay locked until the '
+        'profile is completed', (tester) async {
+      // Tall viewport so the whole questionnaire — including the
+      // 'Continue' button — is on screen without scrolling.
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
       await tester.pumpWidget(ProviderScope(
         overrides: [
           settingsProvider.overrideWith(_TestSettingsController.new),
@@ -266,23 +272,24 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      // The questionnaire, not the tabs. 'Start tracking' lives at the bottom
-      // of the tall list, so assert on what's on screen first.
-      expect(find.text('Skip for now'), findsOneWidget);
-      expect(find.text('A few questions, then we’re off'), findsOneWidget);
+      // The first flow step, not the tabs — and there's no skip button.
+      expect(find.text('Skip for now'), findsNothing);
+      expect(find.text('How tall are you?'), findsOneWidget);
       expect(find.text('Today'), findsNothing);
 
-      await tester.tap(find.text('Skip for now'));
+      // Tapping through without answering just bounces with validation —
+      // the tabs are unreachable until the profile is completed.
+      await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Today'), findsOneWidget);
-      expect(find.text('Skip for now'), findsNothing);
+      expect(find.text('Enter your height in centimetres.'), findsOneWidget);
+      expect(find.text('How tall are you?'), findsOneWidget);
+      expect(find.text('Today'), findsNothing);
     });
 
-    testWidgets('onboarding estimates maintenance, saves it and plants a '
+    testWidgets('onboarding flow estimates maintenance, saves it and plants a '
         'weigh-in', (tester) async {
-      // Tall viewport so the whole single-screen questionnaire is visible —
-      // no scrolling choreography needed in the test.
+      // Tall viewport so each flow step fits without scrolling.
       tester.view.physicalSize = const Size(800, 1600);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -306,21 +313,33 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      expect(find.text('Skip for now'), findsOneWidget);
+      // No skip button — completion is the only way past the questionnaire.
+      expect(find.text('Skip for now'), findsNothing);
+      expect(find.text('How tall are you?'), findsOneWidget);
 
-      // Male, 70 kg, 175 cm, 25 y, lightly active -> BMR 1673.75, ×1.375 =
-      // 2301 kcal/day.
+      // Step 1 — height in cm.
       await tester.enterText(find.widgetWithText(TextField, 'Height'), '175');
-      await tester.enterText(find.widgetWithText(TextField, 'Weight'), '70');
-      await tester.enterText(find.widgetWithText(TextField, 'Age'), '25');
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
 
+      // Step 2 — weight in kg.
+      expect(find.text('What do you weigh today?'), findsOneWidget);
+      await tester.enterText(find.widgetWithText(TextField, 'Weight'), '70');
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      // Step 3 — age and sex.
+      expect(find.text('A couple more details'), findsOneWidget);
+      await tester.enterText(find.widgetWithText(TextField, 'Age'), '25');
       await tester.tap(find.text('Male'));
       await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Lightly active'));
+      await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
 
-      // The live estimate appears before saving.
+      // Step 4 — activity: the live estimate appears, then finish.
+      expect(find.text('How active is your week?'), findsOneWidget);
+      await tester.tap(find.text('Lightly active'));
+      await tester.pumpAndSettle();
       expect(find.text('2301 kcal/day'), findsOneWidget);
 
       await tester.tap(find.text('Start tracking'));
@@ -378,31 +397,35 @@ void main() {
       // "Go to Settings" actually lands on the Settings tab.
       await tester.tap(find.text('Go to Settings'));
       await tester.pumpAndSettle();
-      expect(find.text('Your OpenAI key'), findsOneWidget);
+      expect(find.text('OpenAI API key'), findsOneWidget);
     });
 
-    testWidgets('settings screen shows the BYOK form', (tester) async {
+    testWidgets('settings hub fans out to focused pages', (tester) async {
       await tester.pumpWidget(await _testApp());
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Settings').last);
       await tester.pumpAndSettle();
 
+      // The hub lists every concern instead of one long grab-bag.
+      expect(find.text('OpenAI API key'), findsOneWidget);
+      expect(find.text('Targets & profile'), findsOneWidget);
+      expect(find.text('Daily reminder'), findsOneWidget);
+      expect(find.text('Data'), findsOneWidget);
+      expect(find.text('Your OpenAI key'), findsNothing);
+
+      // OpenAI & voice page.
+      await tester.tap(find.text('OpenAI API key'));
+      await tester.pumpAndSettle();
       expect(find.text('Your OpenAI key'), findsOneWidget);
       expect(find.text('Foods it should recognize'), findsOneWidget);
-      expect(find.text('Targets'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
 
-      await tester.scrollUntilVisible(
-        find.text('Maintenance calories / day'),
-        120,
-        scrollable: find
-            .descendant(
-                of: find.byType(ListView),
-                matching: find.byType(Scrollable))
-            .first,
-      );
+      // Targets & profile page.
+      await tester.tap(find.text('Targets & profile'));
+      await tester.pumpAndSettle();
       expect(find.text('Maintenance calories / day'), findsOneWidget);
-
       await tester.scrollUntilVisible(
         find.text('Save changes'),
         120,
@@ -413,16 +436,12 @@ void main() {
             .first,
       );
       expect(find.text('Save changes'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
 
-      await tester.scrollUntilVisible(
-        find.text('Delete all entries'),
-        120,
-        scrollable: find
-            .descendant(
-                of: find.byType(ListView),
-                matching: find.byType(Scrollable))
-            .first,
-      );
+      // Data page.
+      await tester.tap(find.text('Data'));
+      await tester.pumpAndSettle();
       expect(find.text('Delete all entries'), findsOneWidget);
       // Demo seeding is a debug-only affordance (kDebugMode is true in tests).
       expect(find.text('Load demo data'), findsOneWidget);
@@ -442,6 +461,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Settings').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OpenAI API key'));
       await tester.pumpAndSettle();
 
       expect(find.text('sk-••••••••abcd'), findsOneWidget);

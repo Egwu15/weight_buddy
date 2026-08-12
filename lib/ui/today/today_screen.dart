@@ -15,6 +15,7 @@ import '../widgets/ledger_card.dart';
 import '../widgets/macro_plate.dart';
 import '../widgets/record_dock.dart';
 import '../widgets/timeline_tile.dart';
+import '../widgets/app_toast.dart';
 
 /// The single screen that does the job: today, at a glance, with the mic
 /// a thumb away.
@@ -175,9 +176,7 @@ class TodayScreen extends ConsumerWidget {
     if (!context.mounted) return;
     switch (result) {
       case kRecordSheetLogged:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Logged')),
-        );
+        AppToast.show(context, 'Logged');
       case kRecordSheetGoToSettings:
         // The record sheet asked for the key; jump to the Settings tab.
         onOpenSettings();
@@ -213,9 +212,7 @@ class TodayScreen extends ConsumerWidget {
     if (confirmed != true || !context.mounted) return;
     await ref.read(dayLogsProvider.notifier).delete(entry);
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Deleted')),
-    );
+    AppToast.show(context, 'Deleted');
   }
 }
 
@@ -324,28 +321,32 @@ class _PeriodGlance extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: _GlanceCell(label: 'WEEK LEFT', left: week?.leftKcal),
-              ),
-              Container(
-                width: 1,
-                height: 36,
-                color: AppColors.ember,
-              ),
-              Expanded(
-                child: _GlanceCell(label: 'MONTH LEFT', left: month?.leftKcal),
-              ),
-              const SizedBox(width: 4),
-              const Icon(Icons.chevron_right_rounded,
-                  color: AppColors.smoke, size: 20),
-            ],
+      child: Tooltip(
+        message:
+            'Left runs from today to the end of each period; untracked days are not counted.',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _GlanceCell(label: 'WEEK LEFT', left: week?.leftKcal),
+                ),
+                Container(
+                  width: 1,
+                  height: 36,
+                  color: AppColors.ember,
+                ),
+                Expanded(
+                  child: _GlanceCell(label: 'MONTH LEFT', left: month?.leftKcal),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.smoke, size: 20),
+              ],
+            ),
           ),
         ),
       ),

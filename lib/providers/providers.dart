@@ -93,6 +93,8 @@ class DayLogsController extends AsyncNotifier<List<LogEntry>> {
     final settings = await ref.read(appSettingsProvider.future);
     // Snapshot the target in effect today so this day is judged by it later.
     await db.insertLog(entry, maintenanceKcal: settings.maintenanceKcal);
+    // A session that crossed midnight shouldn't keep yesterday's anchor.
+    ref.read(nowProvider.notifier).refresh();
     ref.invalidateSelf();
     // Logging today means the 8pm nudge has nothing left to say.
     await ref.read(rearmDailyReminderProvider)(db: db);
@@ -134,6 +136,7 @@ final appSettingsProvider =
 class AppSettingsController extends AsyncNotifier<AppSettingsData> {
   static const kMaintenance = 'maintenance_kcal';
   static const kWeightUnit = 'weight_unit';
+  static const kHeightUnit = 'height_unit';
   static const kReminderEnabled = 'reminder_enabled';
   static const kReminderTime = 'reminder_time';
   static const kMemoryEnabled = 'memory_enabled';
@@ -149,6 +152,7 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
     final maintenance =
         double.tryParse(await db.getSetting(kMaintenance) ?? '') ?? 2200;
     final unit = await db.getSetting(kWeightUnit) ?? 'kg';
+    final heightUnit = await db.getSetting(kHeightUnit) ?? 'cm';
     final reminderEnabled =
         (await db.getSetting(kReminderEnabled) ?? 'false') == 'true';
     final timeParts = (await db.getSetting(kReminderTime) ?? '20:00')
@@ -171,6 +175,7 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
     return AppSettingsData(
       maintenanceKcal: maintenance,
       weightUnit: unit,
+      heightUnit: heightUnit,
       reminderEnabled: reminderEnabled,
       reminderTime: TimeOfDay(
         hour: timeParts.isNotEmpty ? timeParts[0] : 20,
@@ -189,6 +194,7 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
     final db = await ref.read(databaseProvider.future);
     await db.setSetting(kMaintenance, data.maintenanceKcal.toString());
     await db.setSetting(kWeightUnit, data.weightUnit);
+    await db.setSetting(kHeightUnit, data.heightUnit);
     await db.setSetting(kReminderEnabled, data.reminderEnabled.toString());
     await db.setSetting(
       kReminderTime,
@@ -350,31 +356,111 @@ class SelectedWeek extends Notifier<DateTime> {
       state = startOfWeek(state.add(Duration(days: 7 * weeks)));
 }
 
+/// Injectable "today" (local midnight). Defaults to the real clock; tests
+/// override it so the period budgets are deterministic. Refreshed on app
+/// resume and after logging, so a session that spans midnight doesn't keep
+/// yesterday's anchor.
+final nowProvider = NotifierProvider<NowController, DateTime>(
+  NowController.new,
+);
+
+class NowController extends Notifier<DateTime> {
+  @override
+  DateTime build() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  /// Re-anchors "today" to the real clock.
+  void refresh() {
+    final now = DateTime.now();
+    state = DateTime(now.year, now.month, now.day);
+  }
+}
+
 /// Ledger totals plus the maintenance budget for a half-open local-day range
-/// `(start, end)`. The budget counts every day in the range — logged or not —
-/// at that day's snapshot target when one exists, falling back to the current
-/// target for days that were never logged. LEFT therefore answers "how many
-/// calories do I have left across this whole period?".
+/// `(start, end)`.
+///
+/// - **Past periods** (end ≤ today): the budget counts every day in the range
+///   at its target and LEFT = budget − net — a full-period review.
+/// - **The ongoing period** (contains today): the budget counts only the days
+///   from today to the period's end, NET covers only the logs in that window,
+///   and any overspend on tracked days before today (clamped at zero — no
+///   banking of under-eating) is deducted. LEFT answers "how many calories do
+///   I have left from today to the end of the period?" without untracked days
+///   inflating it.
+/// - **Future periods**: the same forward path naturally covers the whole
+///   range.
 final periodTotalsProvider =
     FutureProvider.family<PeriodTotals, (DateTime, DateTime)>(
   (ref, range) async {
     final (start, end) = range;
+    final today = ref.watch(nowProvider);
     final db = await ref.watch(databaseProvider.future);
-    final totals = LogTotals.fromEntries(await db.logsBetween(start, end));
-    final snaps = await db.dayMaintenanceBetween(start, end);
-    final current =
-        ref.watch(appSettingsProvider).value?.maintenanceKcal ?? 2200;
-    var budget = 0.0;
     final first = DateTime(start.year, start.month, start.day);
     final last = DateTime(end.year, end.month, end.day);
-    var day = first;
-    while (day.isBefore(last)) {
-      final key =
-          DateTime(day.year, day.month, day.day).millisecondsSinceEpoch;
-      budget += snaps[key] ?? current;
-      day = day.add(const Duration(days: 1));
+
+    final snaps = await db.dayMaintenanceBetween(start, end);
+    final logs = await db.logsBetween(start, end);
+
+    // Read the maintenance target only after the awaits above: watching an
+    // AsyncNotifierProvider before an async build has settled can deadlock
+    // Riverpod's flush (the original code ordered it this way too).
+    final current =
+        ref.watch(appSettingsProvider).value?.maintenanceKcal ?? 2200;
+    double maintenanceFor(DateTime day) =>
+        snaps[DateTime(day.year, day.month, day.day).millisecondsSinceEpoch] ??
+        current;
+
+    // A period entirely in the past keeps the full-period ledger.
+    if (!last.isAfter(today)) {
+      var budget = 0.0;
+      for (var day = first;
+          day.isBefore(last);
+          day = DateTime(day.year, day.month, day.day + 1)) {
+        budget += maintenanceFor(day);
+      }
+      return PeriodTotals(
+        totals: LogTotals.fromEntries(logs),
+        budgetKcal: budget,
+      );
     }
-    return PeriodTotals(totals: totals, budgetKcal: budget);
+
+    // Ongoing / future period: the budget runs from today → period end; only
+    // overspend from tracked earlier days carries (under-eating never banks,
+    // untracked days count for nothing).
+    final forwardLogs = <LogEntry>[];
+    final earlier = <DateTime, LogTotals>{};
+    for (final e in logs) {
+      final d = DateTime.fromMillisecondsSinceEpoch(e.timestamp).toLocal();
+      final day = DateTime(d.year, d.month, d.day);
+      if (day.isBefore(today)) {
+        earlier[day] =
+            (earlier[day] ?? const LogTotals()) + LogTotals.fromEntries([e]);
+      } else {
+        forwardLogs.add(e);
+      }
+    }
+
+    var budget = 0.0;
+    var overage = 0.0;
+    for (var day = first;
+        day.isBefore(last);
+        day = DateTime(day.year, day.month, day.day + 1)) {
+      if (day.isBefore(today)) {
+        final excess = (earlier[day]?.netKcal ?? 0) - maintenanceFor(day);
+        if (excess > 0) overage += excess;
+      } else {
+        budget += maintenanceFor(day);
+      }
+    }
+
+    return PeriodTotals(
+      totals: LogTotals.fromEntries(forwardLogs),
+      budgetKcal: budget,
+      overageKcal: overage,
+      fromToday: today.isAfter(first) && today.isBefore(last),
+    );
   },
 );
 

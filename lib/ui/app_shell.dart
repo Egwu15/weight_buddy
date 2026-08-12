@@ -11,8 +11,7 @@ import 'today/today_screen.dart';
 
 /// Four destinations: Today, Month, Coach and Settings. The recorder lives
 /// in Today's dock. On a brand-new install the first-run onboarding screen is
-/// shown instead of the tabs until the profile has been completed (or
-/// skipped).
+/// shown instead of the tabs until the profile has been completed.
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
@@ -40,6 +39,7 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     if (state == AppLifecycleState.resumed) {
       // Re-check the nudge whenever the app comes back: today's logs may
       // have changed or the calendar may have rolled over while backgrounded.
+      ref.read(nowProvider.notifier).refresh();
       ref.read(rearmDailyReminderProvider)();
     }
   }

@@ -6,6 +6,7 @@ import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
+import '../widgets/app_toast.dart';
 
 /// Bottom sheet to log a weigh-in: date, weight in kg or lb, optional note.
 Future<void> showWeighInSheet(BuildContext context) {
@@ -87,9 +88,7 @@ class _WeighInSheetState extends ConsumerState<WeighInSheet> {
         );
     if (!mounted) return;
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Weigh-in saved')),
-    );
+    AppToast.show(context, 'Weigh-in saved');
   }
 
   @override

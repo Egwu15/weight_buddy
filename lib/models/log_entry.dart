@@ -214,18 +214,39 @@ class LogTotals {
 }
 
 /// Aggregates for a whole period — a week or a month — pairing the ledger
-/// totals with the maintenance budget that period carries. The budget is the
-/// sum of every day's target (per-day snapshot where one exists, else the
-/// current target), so LEFT = budget − net answers "how many calories do I
-/// have left this week / month?".
+/// totals with the maintenance budget that period carries.
+///
+/// For the **ongoing period** (the one containing today) the budget covers
+/// only the days from today to the period's end: untracked earlier days count
+/// for nothing, and any overspend on tracked days before today carries forward
+/// (clamped at zero — under-eating never banks). LEFT then answers "how many
+/// calories do I have left from today to the end of the period?" without late
+/// sign-ins or skipped days inflating it. Past periods keep the full-period
+/// ledger for review.
 class PeriodTotals {
-  const PeriodTotals({required this.totals, required this.budgetKcal});
+  const PeriodTotals({
+    required this.totals,
+    required this.budgetKcal,
+    this.overageKcal = 0,
+    this.fromToday = false,
+  });
 
   final LogTotals totals;
 
-  /// Sum of the daily maintenance target over every day in the period.
+  /// Sum of the daily maintenance target over the days this period's budget
+  /// covers — every day for past/future periods, today → period end for the
+  /// ongoing one.
   final double budgetKcal;
 
-  /// What's left of the period's budget after net calories.
-  double get leftKcal => budgetKcal - totals.netKcal;
+  /// Overspend carried in from tracked days before today in the ongoing
+  /// period, clamped at zero. Always zero for past and future periods.
+  final double overageKcal;
+
+  /// True when the period contains today and the budget therefore runs from
+  /// today to the period's end instead of covering the whole period.
+  final bool fromToday;
+
+  /// What's left of the period's budget: budget − net over the covered days,
+  /// minus any carried overspend.
+  double get leftKcal => budgetKcal - totals.netKcal - overageKcal;
 }

@@ -24,7 +24,7 @@ A personal, lightweight mobile/web application that allows a single user to log 
 
 **Status:** Built.
 
-**Description:** Settings view to store OpenAI API credentials and tune voice recognition vocabulary.
+**Description:** Settings → **OpenAI & voice** page to store OpenAI API credentials and tune voice recognition vocabulary.
 
 **Requirements:**
 
@@ -74,7 +74,7 @@ A personal, lightweight mobile/web application that allows a single user to log 
 **Requirements:**
 
 - **Calorie Summary Card:** Total Calories Consumed, Total Calories Burned, Net Calories, and **Left** — maintenance minus net (green when the day is still under budget, jollof when over).
-- **Period glance:** under the daily ledger, a compact readout of what's left for the current **week** and **month** (budget − net), tappable through to the Month tab for the full period view.
+- **Period glance:** under the daily ledger, a compact readout of what's left for the current **week** and **month** — the budget runs from today to the period's end, so a late sign-in or skipped days never inflate the number — tappable through to the Month tab for the full period view.
 - **Macro Summary Card:** Daily totals for Protein (g), Carbohydrates (g), and Fat (g).
 - **Day's Wave (signature):** Today's entries are drawn as a waveform — each peak is one entry, height follows calories, colour follows type (meal / exercise), position follows time of day. Tapping a peak reveals its summary; an empty day is a flatline invitation to log.
 - **Log Timeline:** Chronological feed of meals (with macro details) and workouts logged for the active date.
@@ -88,13 +88,13 @@ A personal, lightweight mobile/web application that allows a single user to log 
 
 **Requirements:**
 
-- **Maintenance target setting:** user-configurable daily maintenance calories (Settings → Targets), the line everything measures against.
+- **Maintenance target setting:** user-configurable daily maintenance calories (Settings → Targets & profile), the line everything measures against.
 - **Color coding:** a day with logs is tinted **ugu (green)** when net kcal ≤ maintenance, **jollof (red-orange)** when above, and stays neutral when nothing was logged.
 - **Per-day maintenance snapshots:** every log records the maintenance target in effect that day (`day_maintenance`); the calendar and the ON-PLAN streak judge each day by its own snapshot (falling back to the current target for legacy days).
 - **Streaks:** LOG STREAK (consecutive days with ≥1 entry) and ON-PLAN (consecutive days logged *and* at/below maintenance), computed from the last 90 days.
-- **Week & month budget summaries:** two ledger cards above the calendar. The month card follows the existing month navigation; the week card (Monday–Sunday) has its own prev/next arrows. **LEFT** = period budget − net, where the budget is every day in the period at its maintenance target (per-day snapshot, falling back to the current target for days never logged).
+- **Week & month budget summaries:** two ledger cards above the calendar. The month card follows the existing month navigation; the week card (Monday–Sunday) has its own prev/next arrows. For the **ongoing period** the budget runs from **today → period end** at each day's maintenance target (per-day snapshot, falling back to the current target for days never logged); **LEFT** = budget − net − any overspend carried in from tracked days earlier in the period. **Untracked days count for nothing** — a late sign-in or skipped days never inflate LEFT, and under-eating never banks extra allowance (the card shows a `· TODAY →` marker and a "carries X over" footnote when relevant). Past periods keep the full-period ledger for review; future periods show the whole period's budget.
 - **Navigation:** tapping a calendar day jumps the Today dashboard to that day.
-- Weight unit setting (kg/lb) lives in the same Targets section.
+- Weight unit setting (kg/lb) lives in the same Targets & profile page.
 
 ### Feature 6: Weight Tracking
 
@@ -145,7 +145,7 @@ A personal, lightweight mobile/web application that allows a single user to log 
 
 **Requirements:**
 
-- Settings → Reminder: on/off switch + time picker.
+- Settings → Daily reminder: on/off switch + time picker.
 - `flutter_local_notifications` with `timezone` (device-local IANA zone via `flutter_timezone`).
 - **Inexact daily scheduling** (`AndroidScheduleMode.inexactAllowWhileIdle`) — no exact-alarm permission needed on Android.
 - **Gap-aware nudge:** at every re-arm point (app launch, foreground resume, after each log add/delete, settings change) the message is chosen from today's entries — nothing logged → "What did you eat today?"; breakfast/lunch/dinner missing (snacks never count) → "Anything else today? (…)"; meals complete but no workout → "Did you get your workout in?"; a complete day or a switched-off reminder → cancelled, silent.
@@ -164,17 +164,22 @@ weigh-in, or a stored maintenance target) skip the questionnaire entirely.
 **Requirements:**
 
 - **Onboarding gate:** the shell shows the questionnaire until the profile is
-  completed or skipped (`app_settings.profile_completed`); fresh installs only.
-- **Questions:** height (cm), current weight (kg/lb — saved as today's first
-  weigh-in), age, sex, activity level (5 options, 1.2–1.9 factors).
+  completed (`app_settings.profile_completed`) — there is no skip, so the
+  target is personal from the first day; fresh installs only.
+- **Flow, not a form:** a 4-step onboarding (height → weight → age & sex →
+  activity) with a progress bar, Back/Continue buttons and per-step
+  validation.
+- **Questions:** height (cm or ft/in), current weight (kg/lb — saved as
+  today's first weigh-in), age, sex, activity level (5 options, 1.2–1.9
+  factors).
 - **Mifflin-St Jeor estimate:** `BMR = 10·kg + 6.25·cm − 5·age + (5 | −161)`,
-  maintenance = BMR × activity factor. Shown live on the questionnaire and
+  maintenance = BMR × activity factor. Shown live on the final step and
   written to the existing `maintenance_kcal` target — the single line the
   calendar, budgets, streaks and coach all measure against.
-- **Editable later:** Settings → Targets gains a Profile section (height, age,
-  sex, activity) plus a "Use profile to estimate maintenance" action that
-  pre-fills the manual field from the profile + latest weigh-in. A manual
-  value is never overwritten without pressing that button.
+- **Editable later:** Settings → Targets & profile gains a Profile section (height in cm
+  or ft/in, age, sex, activity) plus a "Use profile to estimate maintenance"
+  action that pre-fills the manual field from the profile + latest weigh-in. A
+  manual value is never overwritten without pressing that button.
 
 ## 4. Technical Specifications & API Integration
 
@@ -189,6 +194,7 @@ weigh-in, or a stored maintenance target) skip the questionnaire entirely.
 - **Networking:** `http` — outbound calls go only to OpenAI
 - **Typography:** `google_fonts` — IBM Plex Mono for data, Karla for text
 - **App id:** `com.tedif.weight_buddy` (Android `applicationId`/namespace + iOS bundle identifier)
+- **Settings organization:** a hub menu fans out to four focused pages — **OpenAI & voice** (API key + vocabulary), **Targets & profile** (maintenance, units, profile), **Daily reminder**, and **Data** (demo + delete-all) — each with its own save flow, instead of one long scrolling form.
 
 ### OpenAI Audio API Integration (Speech-to-Text)
 
@@ -278,7 +284,7 @@ All schemas are **fully strict-mode compliant** — every property is in `requir
 - **Schema v3 (migrated via `onUpgrade`):**
   - `logs` gains `meal_type` (breakfast/lunch/dinner/snack; legacy rows default to `meal`).
   - `day_maintenance`: day (local-midnight millis, PK) → maintenance_kcal — a per-day snapshot written whenever a log is added, so past days are judged by the target in effect that day.
-- **Demo data (debug builds):** Settings → Your data → "Load demo data" (hidden in release builds) replaces the records with a realistic busy dataset — ~14 days of tagged meals and workouts, a weigh-in trend, a coach conversation, memories and a saved exercise library. Idempotent via a `demo_seeded` marker; OpenAI key and targets are preserved.
+- **Demo data (debug builds):** Settings → Data → "Load demo data" (hidden in release builds) replaces the records with a realistic busy dataset — ~14 days of tagged meals and workouts, a weigh-in trend, a coach conversation, memories and a saved exercise library. Idempotent via a `demo_seeded` marker; OpenAI key and targets are preserved.
 - **Secrets** (OpenAI key, vocabulary) stay in the platform secure store, never in SQLite.
 - **Coach context** (digest + memories + saved exercises) travels to OpenAI only while chatting; everything else is offline-first.
 

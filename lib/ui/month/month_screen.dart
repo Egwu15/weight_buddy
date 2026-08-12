@@ -46,15 +46,13 @@ class MonthScreen extends ConsumerWidget {
             const SizedBox(height: 12),
             PeriodLedgerCard(
               title: 'MONTH · ${DateFormat('MMMM yyyy').format(month)}',
-              totals: monthPeriodAsync.value?.totals ?? const LogTotals(),
-              budgetKcal: monthPeriodAsync.value?.budgetKcal ?? 0,
+              period: monthPeriodAsync.value,
             ),
             const SizedBox(height: 12),
             PeriodLedgerCard(
               title:
                   'WEEK · ${Formatters.range(weekStart, weekStart.add(const Duration(days: 7)))}',
-              totals: weekAsync.value?.totals ?? const LogTotals(),
-              budgetKcal: weekAsync.value?.budgetKcal ?? 0,
+              period: weekAsync.value,
               previousTooltip: 'Previous week',
               nextTooltip: 'Next week',
               onPrevious: () =>

@@ -13,6 +13,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../memory/memory_screen.dart';
 import '../workouts/workouts_screen.dart';
+import '../widgets/app_toast.dart';
 
 /// The coach: a persisted conversation with the user's own key, fed a
 /// digest of their live data plus the distilled memory + exercise layers.
@@ -206,16 +207,8 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
       final label = saved == 1
           ? 'Saved “${extraction.drafts.first.name}” to your workouts'
           : 'Saved $saved exercises to your workouts';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(label),
-          action: SnackBarAction(
-            label: 'View',
-            textColor: AppColors.plantain,
-            onPressed: _openWorkouts,
-          ),
-        ),
-      );
+      AppToast.show(context, label,
+          actionLabel: 'View', onAction: _openWorkouts);
     }
   }
 

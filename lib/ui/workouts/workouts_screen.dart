@@ -6,6 +6,7 @@ import '../../models/exercise_recommendation.dart';
 import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
+import '../widgets/app_toast.dart';
 import 'log_exercise_sheet.dart';
 
 /// The auto-saved exercise library: every recommendation the coach made,
@@ -167,9 +168,7 @@ class _ExerciseCard extends ConsumerWidget {
     ].join('\n');
     await Clipboard.setData(ClipboardData(text: text));
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Copied to clipboard')),
-    );
+    AppToast.show(context, 'Copied to clipboard');
   }
 
   void _ask(WidgetRef ref, BuildContext context) {

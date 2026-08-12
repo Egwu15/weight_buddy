@@ -126,6 +126,52 @@ class ActivitySelector extends StatelessWidget {
   }
 }
 
+/// cm / ft toggle for the height input. Height itself is always stored in
+/// centimetres; the toggle only changes how it's typed.
+class HeightUnitToggle extends StatelessWidget {
+  const HeightUnitToggle({super.key, required this.unit, required this.onChanged});
+
+  final String unit;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.barkRaised,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.ember),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _unitButton('cm', unit == 'cm', () => onChanged('cm')),
+          _unitButton('ft', unit == 'ft', () => onChanged('ft')),
+        ],
+      ),
+    );
+  }
+
+  Widget _unitButton(String label, bool selected, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.plantain : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          style: AppText.label(color: selected ? AppColors.pot : AppColors.smoke),
+        ),
+      ),
+    );
+  }
+}
+
 /// kg / lb toggle, matching the weigh-in sheet's control.
 class WeightUnitToggle extends StatelessWidget {
   const WeightUnitToggle({super.key, required this.unit, required this.onChanged});

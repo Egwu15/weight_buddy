@@ -3,17 +3,19 @@ import 'package:flutter/material.dart';
 import '../../models/log_entry.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/formatters.dart';
 import 'ledger_card.dart';
 
 /// A ledger readout for a whole period — a week or a month — with a title and
-/// optional prev/next navigation. LEFT here is budget − net, where the budget
-/// is every day in the period at its maintenance target.
+/// optional prev/next navigation. LEFT is budget − net − carried overspend:
+/// for the ongoing period the budget runs from today → period end (untracked
+/// earlier days count for nothing), so the number answers "what do I have
+/// left from now on" without being inflated by skipped days.
 class PeriodLedgerCard extends StatelessWidget {
   const PeriodLedgerCard({
     super.key,
     required this.title,
-    required this.totals,
-    required this.budgetKcal,
+    required this.period,
     this.onPrevious,
     this.onNext,
     this.previousTooltip = 'Previous',
@@ -21,8 +23,7 @@ class PeriodLedgerCard extends StatelessWidget {
   });
 
   final String title;
-  final LogTotals totals;
-  final double budgetKcal;
+  final PeriodTotals? period;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
   final String previousTooltip;
@@ -30,6 +31,10 @@ class PeriodLedgerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final totals = period?.totals ?? const LogTotals();
+    final overage = period?.overageKcal ?? 0;
+    final fromToday = period?.fromToday ?? false;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
@@ -39,11 +44,18 @@ class PeriodLedgerCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.label(color: AppColors.smoke),
+                  child: Tooltip(
+                    message: fromToday
+                        ? 'Budget runs from today to the end of this period. '
+                            "Untracked days aren't counted"
+                            '${overage > 0 ? '; ${Formatters.kcal(overage)} carries over from earlier this period.' : '.'}'
+                        : 'Budget is the whole period at its daily maintenance target.',
+                    child: Text(
+                      fromToday ? '$title · TODAY →' : title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.label(color: AppColors.smoke),
+                    ),
                   ),
                 ),
                 if (onPrevious != null)
@@ -66,9 +78,36 @@ class PeriodLedgerCard extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(0, 4, 8, 14),
-              child: LedgerCells(
-                totals: totals,
-                left: budgetKcal - totals.netKcal,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LedgerCells(
+                    totals: totals,
+                    left: period?.leftKcal ?? 0,
+                  ),
+                  if (fromToday)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'budget runs today → period end · untracked days not counted',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.bodyMuted(fontSize: 11),
+                      ),
+                    ),
+                  if (overage > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'carries ${Formatters.kcal(overage)} over from earlier this period',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.bodyMuted(
+                            fontSize: 11, color: AppColors.jollof),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
