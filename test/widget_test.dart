@@ -1,0 +1,629 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'package:weight_buddy/data/app_database.dart';
+import 'package:weight_buddy/data/coach_context.dart';
+import 'package:weight_buddy/main.dart';
+import 'package:weight_buddy/models/app_settings_data.dart';
+import 'package:weight_buddy/models/chat_message.dart';
+import 'package:weight_buddy/models/exercise_recommendation.dart';
+import 'package:weight_buddy/models/log_entry.dart';
+import 'package:weight_buddy/models/memory.dart';
+import 'package:weight_buddy/models/weigh_in.dart';
+import 'package:weight_buddy/providers/providers.dart';
+import 'package:weight_buddy/utils/streaks.dart';
+
+class _TestSettingsController extends SettingsController {
+  @override
+  Future<AppSettings> build() async =>
+      const AppSettings(apiKey: '', vocabulary: '');
+}
+
+class _KeyedSettingsController extends SettingsController {
+  @override
+  Future<AppSettings> build() async => const AppSettings(
+        apiKey: 'sk-test1234567890abcd',
+        vocabulary: 'Jollof, Egusi',
+      );
+}
+
+/// Default targets so widget tests never touch the database plugin.
+class _TestAppSettingsController extends AppSettingsController {
+  @override
+  Future<AppSettingsData> build() async => const AppSettingsData();
+}
+
+/// In-memory controller so widget tests never touch platform plugins.
+class _FakeLogsController extends DayLogsController {
+  List<LogEntry> _logs = const [];
+
+  @override
+  Future<List<LogEntry>> build() async => _logs;
+
+  @override
+  Future<void> add(LogEntry entry) async {
+    _logs = [..._logs, entry.copyWith(id: _logs.length + 1)];
+    ref.invalidateSelf();
+  }
+
+  @override
+  Future<void> delete(LogEntry entry) async {
+    _logs = _logs.where((e) => e.id != entry.id).toList();
+    ref.invalidateSelf();
+  }
+}
+
+/// In-memory weigh-ins so widget tests never touch platform plugins.
+class _FakeWeighInsController extends WeighInsController {
+  List<WeighIn> _weighIns = const [];
+
+  @override
+  Future<List<WeighIn>> build() async => _weighIns;
+
+  @override
+  Future<void> add(WeighIn weighIn) async {
+    _weighIns = [..._weighIns, weighIn.copyWith(id: _weighIns.length + 1)];
+    ref.invalidateSelf();
+  }
+
+  @override
+  Future<void> delete(WeighIn weighIn) async {
+    _weighIns = _weighIns.where((e) => e.id != weighIn.id).toList();
+    ref.invalidateSelf();
+  }
+}
+
+/// In-memory chat thread so widget tests never touch platform plugins.
+class _FakeChatController extends ChatController {
+  _FakeChatController([this._messages = const []]);
+
+  List<ChatMessage> _messages;
+
+  @override
+  Future<List<ChatMessage>> build() async => _messages;
+
+  @override
+  Future<void> addUser(String text) async {
+    _messages = [
+      ..._messages,
+      ChatMessage(
+        role: 'user',
+        content: text,
+        createdAt: _messages.length,
+      ),
+    ];
+    ref.invalidateSelf();
+  }
+
+  @override
+  Future<void> addAssistant(String text) async {
+    _messages = [
+      ..._messages,
+      ChatMessage(
+        role: 'assistant',
+        content: text,
+        createdAt: _messages.length,
+      ),
+    ];
+    ref.invalidateSelf();
+  }
+
+  @override
+  Future<void> clear() async {
+    _messages = const [];
+    ref.invalidateSelf();
+  }
+}
+
+/// In-memory memories so widget tests never touch platform plugins.
+class _FakeMemoriesController extends MemoriesController {
+  List<Memory> _memories = const [];
+
+  @override
+  Future<List<Memory>> build() async => _memories;
+
+  @override
+  Future<void> upsert(Memory memory) async {
+    _memories = [..._memories, memory];
+    ref.invalidateSelf();
+  }
+
+  @override
+  Future<void> remove(Memory memory) async {
+    _memories = _memories.where((m) => m.id != memory.id).toList();
+    ref.invalidateSelf();
+  }
+}
+
+/// In-memory exercise library so widget tests never touch platform plugins.
+class _FakeExercisesController extends ExercisesController {
+  List<ExerciseRecommendation> _exercises = const [];
+
+  @override
+  Future<List<ExerciseRecommendation>> build() async => _exercises;
+
+  @override
+  Future<bool> add(ExerciseRecommendation exercise) async {
+    _exercises = [..._exercises, exercise];
+    ref.invalidateSelf();
+    return true;
+  }
+
+  @override
+  Future<void> remove(ExerciseRecommendation exercise) async {
+    _exercises = _exercises.where((e) => e.id != exercise.id).toList();
+    ref.invalidateSelf();
+  }
+}
+
+Future<ProviderScope> _testApp() async {
+  GoogleFonts.config.allowRuntimeFetching = false;
+  return ProviderScope(
+    overrides: [
+      settingsProvider.overrideWith(_TestSettingsController.new),
+      dayLogsProvider.overrideWith(_FakeLogsController.new),
+      appSettingsProvider.overrideWith(_TestAppSettingsController.new),
+      weighInsProvider.overrideWith(_FakeWeighInsController.new),
+      chatMessagesProvider.overrideWith(_FakeChatController.new),
+      memoriesProvider.overrideWith(_FakeMemoriesController.new),
+      exercisesProvider.overrideWith(_FakeExercisesController.new),
+      monthTotalsProvider.overrideWith(
+          (ref, month) async => const <String, LogTotals>{}),
+      streakProvider.overrideWith(
+          (ref) async => const Streaks(logging: 4, onPlan: 3)),
+    ],
+    child: const WeightBuddyApp(),
+  );
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('app', () {
+    testWidgets('shows the empty day, ledger and voice dock', (tester) async {
+      await tester.pumpWidget(await _testApp());
+      await tester.pumpAndSettle();
+
+      expect(find.text('weightbuddy'), findsOneWidget);
+      expect(find.text('Log by voice'), findsWidgets);
+      expect(find.text('EATEN'), findsOneWidget);
+      expect(find.text('BURNED'), findsOneWidget);
+      expect(find.text('NET'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.text('Nothing logged today'),
+        120,
+        scrollable: find
+            .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byType(Scrollable))
+            .first,
+      );
+      expect(find.text('Nothing logged today'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.text('Macros'),
+        -120,
+        scrollable: find
+            .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byType(Scrollable))
+            .first,
+      );
+      expect(find.text('Macros'), findsOneWidget);
+    });
+
+    testWidgets('record sheet asks for the key first', (tester) async {
+      await tester.pumpWidget(await _testApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Log by voice').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your key goes here first'), findsOneWidget);
+      expect(find.text('Hold to speak'), findsNothing);
+    });
+
+    testWidgets('settings screen shows the BYOK form', (tester) async {
+      await tester.pumpWidget(await _testApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Settings').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your OpenAI key'), findsOneWidget);
+      expect(find.text('Foods it should recognize'), findsOneWidget);
+      expect(find.text('Targets'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.text('Save changes'),
+        120,
+        scrollable: find
+            .descendant(
+                of: find.byType(ListView),
+                matching: find.byType(Scrollable))
+            .first,
+      );
+      expect(find.text('Save changes'), findsOneWidget);
+      expect(find.text('Maintenance calories / day'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.text('Delete all entries'),
+        120,
+        scrollable: find
+            .descendant(
+                of: find.byType(ListView),
+                matching: find.byType(Scrollable))
+            .first,
+      );
+      expect(find.text('Delete all entries'), findsOneWidget);
+    });
+
+    testWidgets('saved key is masked and not revealable', (tester) async {
+      GoogleFonts.config.allowRuntimeFetching = false;
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(_KeyedSettingsController.new),
+          dayLogsProvider.overrideWith(_FakeLogsController.new),
+          appSettingsProvider.overrideWith(_TestAppSettingsController.new),
+          weighInsProvider.overrideWith(_FakeWeighInsController.new),
+        ],
+        child: const WeightBuddyApp(),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Settings').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('sk-••••••••abcd'), findsOneWidget);
+      expect(find.text('Replace key'), findsOneWidget);
+      expect(find.text('sk-test1234567890abcd'), findsNothing);
+      expect(find.byTooltip('Show key'), findsNothing);
+    });
+  });
+
+  group('data', () {
+    test('totals aggregate meals and exercise correctly', () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      const meal = LogEntry(
+        timestamp: 0,
+        type: EntryType.meal,
+        summary: 'Jollof rice and chicken',
+        calories: 1350,
+        proteinG: 53.5,
+        carbsG: 158,
+        fatG: 50,
+        rawTranscript: 'jollof',
+      );
+      final workout = LogEntry(
+        timestamp: now,
+        type: EntryType.exercise,
+        summary: 'Treadmill run',
+        calories: 300,
+        proteinG: 0,
+        carbsG: 0,
+        fatG: 0,
+        rawTranscript: 'ran 30 minutes',
+      );
+
+      final totals = LogTotals.fromEntries([meal, workout]);
+      expect(totals.eatenKcal, 1350);
+      expect(totals.burnedKcal, 300);
+      expect(totals.netKcal, 1050);
+      expect(totals.proteinG, 53.5);
+      expect(totals.carbsG, 158);
+      expect(totals.fatG, 50);
+    });
+
+    testWidgets('day logs add and delete through the controller',
+        (tester) async {
+      await tester.runAsync(() async {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfi;
+        final db = await AppDatabase.open(path: inMemoryDatabasePath);
+        final container = ProviderContainer(
+          overrides: [
+            databaseProvider.overrideWith((ref) async => db),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        await container.read(databaseProvider.future);
+        final now = DateTime.now();
+        container.read(selectedDayProvider.notifier).setDay(now);
+
+        final controller = container.read(dayLogsProvider.notifier);
+        await controller.add(LogEntry(
+          timestamp: now.millisecondsSinceEpoch,
+          type: EntryType.meal,
+          summary: 'Egusi and pounded yam',
+          calories: 800,
+          proteinG: 20,
+          carbsG: 90,
+          fatG: 30,
+          rawTranscript: 'egusi',
+        ));
+
+        final logs = await container.read(dayLogsProvider.future);
+        expect(logs, hasLength(1));
+        expect(logs.first.summary, 'Egusi and pounded yam');
+        expect(logs.first.id, isNotNull);
+
+        await controller.delete(logs.first);
+        final after = await container.read(dayLogsProvider.future);
+        expect(after, isEmpty);
+      });
+    });
+
+    testWidgets('v2 tables: settings, weigh-ins, memories, exercises',
+        (tester) async {
+      await tester.runAsync(() async {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfi;
+        final db = await AppDatabase.open(path: inMemoryDatabasePath);
+
+        // Settings KV round-trip.
+        expect(await db.getSetting('nope'), isNull);
+        await db.setSetting('maintenance_kcal', '2350');
+        expect(await db.getSetting('maintenance_kcal'), '2350');
+        await db.setSetting('maintenance_kcal', '2400');
+        expect(await db.getSetting('maintenance_kcal'), '2400');
+
+        // Weigh-ins round-trip (newest first).
+        final day1 = DateTime(2026, 7, 1);
+        final day2 = DateTime(2026, 7, 15);
+        await db.insertWeighIn(WeighIn(date: day1, weightKg: 84.2));
+        final id = await db.insertWeighIn(
+            WeighIn(date: day2, weightKg: 83.1, note: 'Morning'));
+        final all = await db.weighIns();
+        expect(all, hasLength(2));
+        expect(all.first.weightKg, 83.1);
+        expect(all.first.note, 'Morning');
+        await db.deleteWeighIn(id);
+        expect(await db.weighIns(), hasLength(1));
+
+        // Memories: latest-wins upsert by topic.
+        final now = DateTime.now().millisecondsSinceEpoch;
+        await db.upsertMemory(Memory(
+          topic: 'training_goal',
+          content: 'Marathon in May',
+          createdAt: now,
+          updatedAt: now,
+        ));
+        await db.upsertMemory(Memory(
+          topic: 'training_goal',
+          content: 'Half marathon in June',
+          createdAt: now,
+          updatedAt: now + 1,
+        ));
+        final memories = await db.memories();
+        expect(memories, hasLength(1));
+        expect(memories.first.content, 'Half marathon in June');
+        await db.deactivateMemory(memories.first.id!);
+        expect(await db.memories(), isEmpty);
+
+        // Exercises: name dedupe (case-insensitive).
+        await db.insertExercise(ExerciseRecommendation(
+          name: 'Bodyweight Squat',
+          sets: 3,
+          reps: 10,
+          createdAt: now,
+        ));
+        final dup = await db.insertExercise(ExerciseRecommendation(
+          name: 'bodyweight squat',
+          sets: 4,
+          reps: 12,
+          createdAt: now,
+        ));
+        expect(dup, isNull);
+        expect(await db.exercises(), hasLength(1));
+
+        // Wipe clears all user data but keeps settings.
+        await db.wipeAllData();
+        expect(await db.weighIns(), isEmpty);
+        expect(await db.memories(), isEmpty);
+        expect(await db.exercises(), isEmpty);
+        expect(await db.getSetting('maintenance_kcal'), '2400');
+
+        await db.close();
+      });
+    });
+
+    testWidgets('logsForRange spans multiple local days', (tester) async {
+      await tester.runAsync(() async {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfi;
+        final db = await AppDatabase.open(path: inMemoryDatabasePath);
+        final today = DateTime.now();
+        final yesterday = today.subtract(const Duration(days: 1));
+        final tomorrow = today.add(const Duration(days: 1));
+
+        Future<void> addAt(DateTime day) => db.insertLog(LogEntry(
+              timestamp: DateTime(day.year, day.month, day.day)
+                  .millisecondsSinceEpoch,
+              type: EntryType.meal,
+              summary: day == today ? 'Today meal' : 'Other meal',
+              calories: 500,
+              proteinG: 0,
+              carbsG: 0,
+              fatG: 0,
+              rawTranscript: '',
+            ));
+
+        await addAt(yesterday);
+        await addAt(today);
+        await addAt(tomorrow);
+
+        final range = await db.logsForRange(yesterday, today);
+        expect(range, hasLength(2));
+        expect(range.map((e) => e.summary),
+            containsAll(['Other meal', 'Today meal']));
+        await db.close();
+      });
+    });
+
+    test('computeStreaks counts logging and on-plan days', () {
+      final today = DateTime(2026, 8, 12);
+      LogTotals totals(double eaten) => LogTotals(eatenKcal: eaten);
+
+      // Three consecutive logged days; yesterday was over maintenance.
+      final perDay = {
+        DateTime(2026, 8, 10): totals(2000),
+        DateTime(2026, 8, 11): totals(2600),
+        DateTime(2026, 8, 12): totals(1800),
+      };
+
+      final streaks = computeStreaks(perDay, today, 2200);
+      expect(streaks.logging, 3);
+      expect(streaks.onPlan, 2);
+
+      // A gap breaks the streak.
+      final gapped = Map.of(perDay)
+        ..remove(DateTime(2026, 8, 11));
+      expect(computeStreaks(gapped, today, 2200).logging, 1);
+      expect(computeStreaks(gapped, today, 2200).onPlan, 1);
+    });
+
+    test('coach context includes data, memories and saved exercises', () {
+      final context = CoachContext.build(
+        today: const LogTotals(
+          eatenKcal: 2000,
+          burnedKcal: 300,
+          proteinG: 100,
+          carbsG: 200,
+          fatG: 60,
+        ),
+        last7Days: const [],
+        maintenanceKcal: 2200,
+        weighIns: [
+          WeighIn(date: DateTime(2026, 8, 1), weightKg: 85.0),
+        ],
+        streaks: const Streaks(logging: 2, onPlan: 1),
+        memories: [
+          Memory(
+            topic: 'training_goal',
+            content: 'Marathon in May',
+            category: MemoryCategory.goal,
+            createdAt: 0,
+            updatedAt: 0,
+          ),
+        ],
+        exercises: const [
+          ExerciseRecommendation(
+            name: 'Bodyweight Squat',
+            sets: 3,
+            reps: 10,
+            createdAt: 0,
+          ),
+        ],
+      );
+
+      expect(context, contains('MAINTENANCE TARGET: 2200'));
+      expect(context, contains('TODAY:'));
+      expect(context, contains('net 1700 kcal'));
+      expect(context, contains('Marathon in May'));
+      expect(context, contains('Bodyweight Squat'));
+      expect(context, contains('STREAKS: logging 2'));
+    });
+  });
+
+  group('month + coach', () {
+    testWidgets('month tab shows streaks and the calendar grid',
+        (tester) async {
+      await tester.pumpWidget(await _testApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Month'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('LOG STREAK'), findsOneWidget);
+      expect(find.text('ON-PLAN'), findsOneWidget);
+      expect(find.text('4 d'), findsOneWidget);
+      expect(find.text('3 d'), findsOneWidget);
+      expect(
+        find.text(DateFormat('MMMM yyyy').format(DateTime.now())),
+        findsOneWidget,
+      );
+
+      await tester.scrollUntilVisible(
+        find.text('at / below'),
+        120,
+        scrollable: find
+            .descendant(
+                of: find.byType(ListView),
+                matching: find.byType(Scrollable))
+            .first,
+      );
+      expect(find.text('at / below'), findsOneWidget);
+    });
+
+    testWidgets('tapping a month day jumps Today to that day',
+        (tester) async {
+      await tester.pumpWidget(await _testApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Month'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('1'));
+      await tester.pumpAndSettle();
+
+      // Back on Today with its dock.
+      expect(find.text('Log by voice'), findsWidgets);
+    });
+
+    testWidgets('coach tab shows the welcome card and library entry',
+        (tester) async {
+      await tester.pumpWidget(await _testApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Coach'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your coach, with your numbers'), findsOneWidget);
+      expect(find.text('Workouts'), findsWidgets);
+      expect(find.text('Memory'), findsWidgets);
+      // No key configured -> composer prompts for it.
+      expect(find.text('Add your OpenAI key first'), findsOneWidget);
+    });
+
+    testWidgets('coach renders a persisted conversation', (tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(_TestSettingsController.new),
+          dayLogsProvider.overrideWith(_FakeLogsController.new),
+          appSettingsProvider.overrideWith(_TestAppSettingsController.new),
+          weighInsProvider.overrideWith(_FakeWeighInsController.new),
+          memoriesProvider.overrideWith(_FakeMemoriesController.new),
+          exercisesProvider.overrideWith(_FakeExercisesController.new),
+          chatMessagesProvider.overrideWith(() => _FakeChatController(const [
+                ChatMessage(
+                    role: 'user',
+                    content: 'How do I progress?',
+                    createdAt: 1),
+                ChatMessage(
+                    role: 'assistant',
+                    content: 'Add 2 reps weekly.',
+                    createdAt: 2),
+              ])),
+          monthTotalsProvider.overrideWith(
+              (ref, month) async => const <String, LogTotals>{}),
+          streakProvider.overrideWith(
+              (ref) async => const Streaks(logging: 4, onPlan: 3)),
+        ],
+        child: const WeightBuddyApp(),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Coach'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('How do I progress?'), findsOneWidget);
+      expect(find.text('Add 2 reps weekly.'), findsOneWidget);
+    });
+  });
+}
