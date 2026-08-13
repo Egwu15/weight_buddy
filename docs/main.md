@@ -62,7 +62,7 @@ A personal, lightweight mobile/web application that allows a single user to log 
 **Requirements:**
 
 - Transcribe recorded audio via OpenAI Audio API.
-- Send transcript to GPT API to evaluate workout type, duration, intensity, and estimated calories burned.
+- Send transcript to GPT API to extract the workout's *structure* (activity name, sets, reps, duration) — never a calorie guess. Every burn is computed locally by the deterministic exercise engine (mechanical work for reps, MET for duration), priced off the user's latest weigh-in, so a 45-second set can never log a workout-sized number.
 - Append confirmed activity to the daily workout log.
 
 ### Feature 4: Daily Dashboard (Calories & Macros)
@@ -210,6 +210,8 @@ Parsing model: `gpt-4o-mini` with OpenAI Structured Outputs (strict JSON Schema)
 
 All schemas are **fully strict-mode compliant** — every property is in `required`, optional fields use nullable unions (`["number", "null"]`, `["string", "null"]`) — so responses are guaranteed well-formed.
 
+> **Division of labour:** the model only ever *parses* (structure, portions, names). Calories for meals are estimated by the model from portion sizes; calories for **exercises are never estimated by the model** — `estimated_calories_burned` is always `null` in its reply and the app prices the burn locally with the deterministic engine below, using the user's latest weigh-in.
+
 #### Meal & Macro Schema Example
 
 **Transcript Example:** "I had two plates of jollof rice with two pieces of fried chicken and fried plantain"
@@ -256,20 +258,83 @@ All schemas are **fully strict-mode compliant** — every property is in `requir
 
 #### Exercise Schema Example
 
-**Transcript Example:** "I ran on the treadmill for 30 minutes at a moderate pace"
+**Transcript Example:** "I ran on the treadmill for 30 minutes at a moderate pace" — or "I did 5 knee press-ups and 5 dips" (every exercise becomes its own entry in `exercises`).
 
 **JSON Output Structure:**
 
 ```json
 {
   "entry_type": "exercise",
-  "summary": "30 min moderate treadmill run",
+  "summary": "5 knee press-ups and 5 dips",
   "meal_type": null,
-  "activity": "Treadmill Running",
-  "duration_minutes": 30,
-  "estimated_calories_burned": 300
+  "activity": "Knee Press-ups",
+  "duration_minutes": null,
+  "estimated_calories_burned": null,
+  "exercises": [
+    {
+      "name": "Knee Press-ups",
+      "sets": 1,
+      "reps": 5,
+      "duration_minutes": null,
+      "estimated_calories_burned": null
+    },
+    {
+      "name": "Dips",
+      "sets": 1,
+      "reps": 5,
+      "duration_minutes": null,
+      "estimated_calories_burned": null
+    }
+  ]
 }
 ```
+
+Each exercise in the array is saved as its own daily-log entry, so a workout
+that mentions several exercises records them all. The single
+`activity`/`duration_minutes`/`estimated_calories_burned` fields are a legacy
+shape and mirror the first array entry; the `exercises` array is the source
+of truth for what gets logged. The `sets`/`reps`/`duration_minutes` fields
+are the burn engine's inputs and are persisted with each row.
+
+### Exercise Burn Engine (deterministic, non-inflated)
+
+The burn is computed in `lib/utils/exercise_math.dart` — pure math, no LLM,
+no I/O — the same way `CalorieMath` prices the maintenance target.
+
+**Method 1 — mechanical work (reps win).** Bodyweight strength is priced by
+the work actually performed against gravity, divided by ~22% muscular
+efficiency:
+
+```text
+work (J) = mass(kg) × 9.81 × vertical displacement(m) × reps
+kcal     = work (J) ÷ (4,184 × 0.22)          ← 4,184 J per dietary kcal
+```
+
+Vertical displacement constants:
+- Dips: **0.40 m** × full bodyweight
+- Pull-ups: **0.50 m** × full bodyweight
+- Push-ups: **0.25 m** × ~65% bodyweight (hands carry the rest)
+- Squats / lunges: **0.45 m** × full bodyweight
+- Unknown movements: conservative **0.40 m** × full bodyweight
+
+**Method 2 — MET on precise seconds (duration only).** When no reps were
+said, the burn is priced on the exact minutes active — never rounded up to a
+minimum session block:
+
+```text
+kcal = MET × 3.5 × weight(kg) ÷ 200 × duration(minutes)
+```
+
+MET defaults to **8.0** (vigorous calisthenics, Compendium of Physical
+Activities) with per-activity values for common cardio (running ≈ 9.8, brisk
+walk ≈ 4.3, cycling ≈ 7.5, …).
+
+**Verification (mirrors the unit tests in `test/exercise_math_test.dart`):**
+20 bodyweight dips @ 87 kg → `87 × 9.81 × 0.4 × 20 = 6,828 J` → **≈ 7.4 kcal**
+(inside the 6–10 kcal band; MET for a 45 s set ≈ 9.1 kcal). A single
+20-rep set must never reach 20 kcal — the engine caps every set at
+`maxKcalPerSet` as a guard against mis-parsed reps. When the weight is
+unknown the burn is honest zero rather than an invented number.
 
 ### Data Storage Architecture
 
@@ -284,6 +349,7 @@ All schemas are **fully strict-mode compliant** — every property is in `requir
 - **Schema v3 (migrated via `onUpgrade`):**
   - `logs` gains `meal_type` (breakfast/lunch/dinner/snack; legacy rows default to `meal`).
   - `day_maintenance`: day (local-midnight millis, PK) → maintenance_kcal — a per-day snapshot written whenever a log is added, so past days are judged by the target in effect that day.
+- **Schema v4 (migrated via `onUpgrade`):** `logs` gains `sets`, `reps` and `duration_minutes` (nullable) — the structured exercise context the burn was computed from, so logged workouts keep their sets × reps and duration.
 - **Demo data (debug builds):** Settings → Data → "Load demo data" (hidden in release builds) replaces the records with a realistic busy dataset — ~14 days of tagged meals and workouts, a weigh-in trend, a coach conversation, memories and a saved exercise library. Idempotent via a `demo_seeded` marker; OpenAI key and targets are preserved.
 - **Secrets** (OpenAI key, vocabulary) stay in the platform secure store, never in SQLite.
 - **Coach context** (digest + memories + saved exercises) travels to OpenAI only while chatting; everything else is offline-first.

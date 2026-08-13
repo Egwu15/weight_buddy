@@ -11,8 +11,11 @@ speaking — powered by your own OpenAI API key, with everything stored on-devic
 - **OpenAI audio transcription** (`gpt-transcribe`) with a custom vocabulary of
   local dish names passed as the prompt, so regional foods are heard right.
 - **Structured parsing** — the transcript is turned into a meal (items, calories,
-  protein/carbs/fat) or an exercise (activity, duration, calories burned) using
-  OpenAI Structured Outputs with the JSON schemas from `docs/main.md`.
+  protein/carbs/fat) or an exercise (activity, sets, reps, duration) using
+  OpenAI Structured Outputs with the JSON schemas from `docs/main.md`. Exercise
+  burns are never guessed by the model — the app prices them with a
+  deterministic engine (mechanical work for reps, MET for duration), so a
+  20-rep set logs a few kcal, not a fake workout number.
 - **Confirm before saving** — review the parsed items, tweak portion sizes, then
   save to the local log.
 - **The day as a sound wave** — each entry is a peak on the dashboard (height ∝

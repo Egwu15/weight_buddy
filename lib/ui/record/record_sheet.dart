@@ -155,7 +155,12 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
     }
     final text = raw.trim();
     if (text.isEmpty) return;
-    final parsed = await service.parseTranscript(text);
+    // The burn engine needs the user's weight to price the exercise; use the
+    // latest weigh-in so 20 dips can never log a workout-sized number.
+    final weighIns = ref.read(weighInsProvider).value ?? const [];
+    final weightKg = weighIns.isEmpty ? null : weighIns.first.weightKg;
+    final parsed =
+        await service.parseTranscript(text, weightKg: weightKg);
     if (!mounted) return;
     _transcript = text;
     _typed = true;
@@ -185,11 +190,13 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
   }
 
   Future<void> _save(ParsedLog parsed) async {
-    final entry = parsed.toEntry(
+    ref.read(selectedDayProvider.notifier).setDay(DateTime.now());
+    for (final entry in parsed.toEntries(
       timestamp: DateTime.now().millisecondsSinceEpoch,
       rawTranscript: _transcript,
-    );
-    await ref.read(dayLogsProvider.notifier).add(entry);
+    )) {
+      await ref.read(dayLogsProvider.notifier).add(entry);
+    }
     if (!mounted) return;
     Navigator.of(context).pop(kRecordSheetLogged);
   }
@@ -717,8 +724,13 @@ class _ConfirmViewState extends State<_ConfirmView> {
               carbs: _carbs,
               fat: _fat,
             ),
-          ] else
-            _ExerciseCard(parsed: parsed),
+          ] else ...[
+            for (final exercise in parsed.exerciseList)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _ExerciseCard(exercise: exercise),
+              ),
+          ],
           const SizedBox(height: 24),
           Row(
             children: [
@@ -903,13 +915,13 @@ class _TotalsRow extends StatelessWidget {
 }
 
 class _ExerciseCard extends StatelessWidget {
-  const _ExerciseCard({required this.parsed});
+  const _ExerciseCard({required this.exercise});
 
-  final ParsedLog parsed;
+  final ParsedExercise exercise;
 
   @override
   Widget build(BuildContext context) {
-    final duration = parsed.durationMinutes;
+    final duration = exercise.durationMinutes;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -928,11 +940,11 @@ class _ExerciseCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(parsed.activity ?? parsed.summary, style: AppText.title()),
+                Text(exercise.name, style: AppText.title()),
                 const SizedBox(height: 2),
                 Text(
                   '${duration != null ? '${Formatters.grams(duration)} min · ' : ''}'
-                  '${Formatters.kcal(parsed.calories)} kcal burned',
+                  '${Formatters.kcal(exercise.caloriesBurned)} kcal burned',
                   style: AppText.dataS(color: AppColors.smoke),
                 ),
               ],

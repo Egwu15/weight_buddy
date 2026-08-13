@@ -20,6 +20,7 @@ class _FakeService extends OpenAIService {
   Future<ParsedLog> parseTranscript(
     String transcript, {
     String model = 'gpt-4o-mini',
+    double? weightKg,
   }) async {
     return const ParsedLog(
       type: EntryType.meal,
@@ -60,6 +61,7 @@ class _DelayedService extends OpenAIService {
   Future<ParsedLog> parseTranscript(
     String transcript, {
     String model = 'gpt-4o-mini',
+    double? weightKg,
   }) async {
     await _gate.future;
     return const ParsedLog(
@@ -70,6 +72,31 @@ class _DelayedService extends OpenAIService {
       proteinG: 52,
       carbsG: 110,
       fatG: 42,
+    );
+  }
+}
+
+/// A service that parses "… dips … press-ups …" locally so the multi-exercise
+/// workout flow can be tested without the network.
+class _FakeExerciseService extends OpenAIService {
+  _FakeExerciseService() : super(apiKey: 'sk-test');
+
+  @override
+  Future<ParsedLog> parseTranscript(
+    String transcript, {
+    String model = 'gpt-4o-mini',
+    double? weightKg,
+  }) async {
+    return const ParsedLog(
+      type: EntryType.exercise,
+      summary: '5 knee pressups and 5 dips',
+      activity: 'Dips',
+      durationMinutes: null,
+      calories: 2,
+      exercises: [
+        ParsedExercise(name: 'Knee Press-ups', reps: 5, caloriesBurned: 1),
+        ParsedExercise(name: 'Dips', reps: 5, caloriesBurned: 2),
+      ],
     );
   }
 }
@@ -211,5 +238,62 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Does this look right?'), findsOneWidget);
+  });
+
+  testWidgets('a workout with two exercises saves both as separate rows',
+      (tester) async {
+    GoogleFonts.config.allowRuntimeFetching = false;
+    final logsController = _FakeLogsController();
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        openaiServiceProvider.overrideWith((ref) => _FakeExerciseService()),
+        dayLogsProvider.overrideWith(() => logsController),
+      ],
+      child: MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  useSafeArea: true,
+                  builder: (_) => const RecordSheet(),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Type instead'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField),
+      'I did 5 knee pressups and 5 dips',
+    );
+    await tester.tap(find.text('Parse'));
+    await tester.pumpAndSettle();
+
+    // The confirm view shows every exercise, each with its own burn.
+    expect(find.text('Knee Press-ups'), findsOneWidget);
+    expect(find.text('Dips'), findsOneWidget);
+
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    // Both exercises were recorded as separate timeline rows.
+    expect(logsController.logs, hasLength(2));
+    expect(logsController.logs[0].summary, 'Knee Press-ups');
+    expect(logsController.logs[0].calories, 1);
+    expect(logsController.logs[1].summary, 'Dips');
+    expect(logsController.logs[1].calories, 2);
   });
 }

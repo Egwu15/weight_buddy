@@ -5,6 +5,31 @@ import 'package:http/http.dart' as http;
 
 import '../models/log_entry.dart';
 import '../models/memory.dart';
+import '../utils/exercise_math.dart';
+
+/// One exercise parsed out of a spoken workout.
+class ParsedExercise {
+  const ParsedExercise({
+    required this.name,
+    this.sets,
+    this.reps,
+    this.durationMinutes,
+    this.caloriesBurned = 0,
+  });
+
+  final String name;
+
+  /// Sets and reps when the speaker gave them — the ground truth the burn
+  /// engine prices (mechanical work), not the model's guess.
+  final int? sets;
+  final int? reps;
+  final double? durationMinutes;
+
+  /// The burn this exercise was logged with. Computed deterministically from
+  /// the structure above when the user's weight is known; otherwise a
+  /// best-effort estimate parsed out of the model's reply.
+  final double caloriesBurned;
+}
 
 /// A meal or exercise parsed from a transcript by the GPT API.
 class ParsedLog {
@@ -19,6 +44,7 @@ class ParsedLog {
     this.activity,
     this.durationMinutes,
     this.mealType = MealType.meal,
+    this.exercises = const [],
   });
 
   final EntryType type;
@@ -35,19 +61,91 @@ class ParsedLog {
   /// exercises and legacy parses).
   final MealType mealType;
 
-  LogEntry toEntry({required int timestamp, required String rawTranscript}) {
-    return LogEntry(
-      timestamp: timestamp,
-      type: type,
-      summary: summary,
-      calories: calories,
-      proteinG: proteinG,
-      carbsG: carbsG,
-      fatG: fatG,
-      rawTranscript: rawTranscript,
-      items: items,
-      mealType: mealType,
-    );
+  /// Parsed exercises, when the model returned the exercises array.
+  final List<ParsedExercise> exercises;
+
+  /// The exercises array when present; otherwise the legacy single-exercise
+  /// shape (the top-level activity/duration/calories).
+  List<ParsedExercise> get exerciseList {
+    if (exercises.isNotEmpty) return exercises;
+    if (type == EntryType.exercise) {
+      return [
+        ParsedExercise(
+          name: activity ?? summary,
+          durationMinutes: durationMinutes,
+          caloriesBurned: calories,
+        ),
+      ];
+    }
+    return const [];
+  }
+
+  LogEntry toEntry({required int timestamp, required String rawTranscript}) =>
+      toEntries(timestamp: timestamp, rawTranscript: rawTranscript).first;
+
+  /// One row per parsed item (meals) or per parsed exercise. Meals always
+  /// produce a single entry; exercises produce one entry per exercise in the
+  /// `exercises` array so a workout that mentions several exercises records
+  /// them all. Rows for the same parse get a +1 ms timestamp bump so the
+  /// timeline shows them in the order they were spoken (it orders by
+  /// timestamp only).
+  List<LogEntry> toEntries({
+    required int timestamp,
+    required String rawTranscript,
+  }) {
+    if (type == EntryType.meal) {
+      return [
+        LogEntry(
+          timestamp: timestamp,
+          type: type,
+          summary: summary,
+          calories: calories,
+          proteinG: proteinG,
+          carbsG: carbsG,
+          fatG: fatG,
+          rawTranscript: rawTranscript,
+          items: items,
+          mealType: mealType,
+        ),
+      ];
+    }
+    final list = exerciseList;
+    if (list.length == 1) {
+      final e = list.first;
+      return [
+        LogEntry(
+          timestamp: timestamp,
+          type: type,
+          summary: summary.isNotEmpty ? summary : e.name,
+          calories: e.caloriesBurned,
+          proteinG: 0,
+          carbsG: 0,
+          fatG: 0,
+          rawTranscript: rawTranscript,
+          mealType: mealType,
+          sets: e.sets,
+          reps: e.reps,
+          durationMinutes: e.durationMinutes,
+        ),
+      ];
+    }
+    return [
+      for (var i = 0; i < list.length; i++)
+        LogEntry(
+          timestamp: timestamp + i,
+          type: type,
+          summary: list[i].name,
+          calories: list[i].caloriesBurned,
+          proteinG: 0,
+          carbsG: 0,
+          fatG: 0,
+          rawTranscript: rawTranscript,
+          mealType: mealType,
+          sets: list[i].sets,
+          reps: list[i].reps,
+          durationMinutes: list[i].durationMinutes,
+        ),
+    ];
   }
 }
 
@@ -162,9 +260,15 @@ class OpenAIService {
 
   /// Stage 2 — parse a transcript into a structured meal or exercise using
   /// OpenAI Structured Outputs (JSON Schema from the PRD).
+  ///
+  /// When [weightKg] is given, the model's own `estimated_calories_burned`
+  /// values are ignored and every exercise burn is computed deterministically
+  /// from its sets/reps/duration by the exercise engine — so a 20-rep set
+  /// can never log a workout-sized number.
   Future<ParsedLog> parseTranscript(
     String transcript, {
     String model = 'gpt-4o-mini',
+    double? weightKg,
   }) async {
     final response = await _client.post(
       Uri.parse(_chatEndpoint),
@@ -202,7 +306,10 @@ class OpenAIService {
       throw const OpenAIServiceException(
           'Couldn\'t make sense of that — try again in plain words.');
     }
-    return _fromJson(jsonDecode(content) as Map<String, dynamic>);
+    return _fromJson(
+      jsonDecode(content) as Map<String, dynamic>,
+      weightKg: weightKg,
+    );
   }
 
   /// The coach: a free-form conversation with the same BYOK key. Returns the
@@ -379,15 +486,60 @@ class OpenAIService {
     return 'OpenAI failed during $stage${detail.isNotEmpty ? ': $detail' : ''}. Try again.';
   }
 
-  static ParsedLog _fromJson(Map<String, dynamic> json) {
+  static ParsedLog _fromJson(Map<String, dynamic> json, {double? weightKg}) {
     final type =
         EntryType.fromApiName((json['entry_type'] as String?) ?? 'meal');
     if (type == EntryType.exercise) {
+      final exercisesJson = (json['exercises'] as List?) ?? const [];
+      final exercises = <ParsedExercise>[];
+      for (final item in exercisesJson) {
+        if (item is! Map<String, dynamic>) continue;
+        final map = item;
+        final name = ((map['name'] as String?) ?? '').trim();
+        if (name.isEmpty) continue;
+        final sets = (map['sets'] as num?)?.toInt();
+        final reps = (map['reps'] as num?)?.toInt();
+        final durationMinutes = _numOrNull(map['duration_minutes']);
+        exercises.add(ParsedExercise(
+          name: name,
+          sets: sets,
+          reps: reps,
+          durationMinutes: durationMinutes,
+          caloriesBurned: _exerciseBurn(
+            name: name,
+            sets: sets,
+            reps: reps,
+            durationMinutes: durationMinutes,
+            weightKg: weightKg,
+            llmEstimate: _numOrNull(map['estimated_calories_burned']),
+          ),
+        ));
+      }
+      if (exercises.isNotEmpty) {
+        // Keep the single-exercise fields pointing at the first one so legacy
+        // consumers (e.g. the log-exercise sheet) still behave.
+        return ParsedLog(
+          type: type,
+          summary: (json['summary'] as String?) ?? exercises.first.name,
+          calories: exercises.first.caloriesBurned,
+          activity: exercises.first.name,
+          durationMinutes: exercises.first.durationMinutes,
+          exercises: exercises,
+        );
+      }
+      // Legacy single-exercise shape.
+      final activity = (json['activity'] as String?) ?? '';
+      final summary = (json['summary'] as String?) ?? 'Workout';
       return ParsedLog(
         type: type,
-        summary: (json['summary'] as String?) ?? 'Workout',
-        calories: _num(json['estimated_calories_burned']),
-        activity: (json['activity'] as String?) ?? '',
+        summary: summary,
+        calories: _exerciseBurn(
+          name: activity.isNotEmpty ? activity : summary,
+          durationMinutes: _numOrNull(json['duration_minutes']),
+          weightKg: weightKg,
+          llmEstimate: _numOrNull(json['estimated_calories_burned']),
+        ),
+        activity: activity,
         durationMinutes: _numOrNull(json['duration_minutes']),
       );
     }
@@ -420,12 +572,42 @@ class OpenAIService {
   static double _num(dynamic v) => (v as num?)?.toDouble() ?? 0;
   static double? _numOrNull(dynamic v) => (v as num?)?.toDouble();
 
+  /// The deterministic burn for a parsed exercise. With the user's weight the
+  /// engine prices the exercise itself (mechanical work for reps, MET for
+  /// duration); without it the model's guess is kept as a best-effort
+  /// fallback so callers that don't know the weight still get a number.
+  static double _exerciseBurn({
+    required String name,
+    int? sets,
+    int? reps,
+    double? durationMinutes,
+    double? weightKg,
+    double? llmEstimate,
+  }) {
+    if (weightKg != null && weightKg > 0) {
+      return ExerciseMath.burnForExercise(
+        name: name,
+        weightKg: weightKg,
+        sets: sets,
+        reps: reps,
+        durationMinutes: durationMinutes,
+      );
+    }
+    return llmEstimate ?? 0;
+  }
+
   static const _systemPrompt = '''
 You turn spoken meal and exercise descriptions into a structured log.
 For meals, break the food into individual items with estimated portion
 sizes, calories and macros (protein, carbs, fat in grams). Estimate
-reasonably when the speaker does not give amounts. For exercises, identify
-the activity, duration in minutes, and estimated calories burned.
+reasonably when the speaker does not give amounts.
+For exercises, list every distinct activity the speaker mentions as its
+own entry in the exercises array, each with its sets and reps (when the
+speaker gives reps) and its duration in minutes (when the speaker gives
+a time). Never merge exercises together and never drop one — if the person
+says "5 knee press-ups and 5 dips", both exercises belong in the array.
+Never estimate calories: the app computes the burn itself from the sets,
+reps and duration, so always set estimated_calories_burned to null.
 Be accurate about the spirit of what was said; do not invent items that
 were not mentioned. Use the schema exactly. Return JSON only.''';
 
@@ -444,6 +626,7 @@ were not mentioned. Use the schema exactly. Return JSON only.''';
       'activity',
       'duration_minutes',
       'estimated_calories_burned',
+      'exercises',
     ],
     'properties': {
       'entry_type': {'enum': ['meal', 'exercise'], 'type': 'string'},
@@ -482,8 +665,32 @@ were not mentioned. Use the schema exactly. Return JSON only.''';
       'activity': {'type': ['string', 'null']},
       'duration_minutes': {'type': ['number', 'null']},
       'estimated_calories_burned': {'type': ['number', 'null']},
+      'exercises': {
+        'type': 'array',
+        'items': {
+          'type': 'object',
+          'additionalProperties': false,
+          'required': [
+            'name',
+            'sets',
+            'reps',
+            'duration_minutes',
+            'estimated_calories_burned'
+          ],
+          'properties': {
+            'name': {'type': 'string'},
+            'sets': {'type': ['integer', 'null']},
+            'reps': {'type': ['integer', 'null']},
+            'duration_minutes': {'type': ['number', 'null']},
+            'estimated_calories_burned': {'type': ['number', 'null']},
+          },
+        },
+      },
     },
   };
+
+  /// Exposed for tests: the strict parsing schema.
+  static const parseSchema = _schema;
 
   static const _memorySystemPrompt = '''
 You review coaching conversations and distil what is worth remembering

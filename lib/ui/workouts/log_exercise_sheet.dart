@@ -63,7 +63,10 @@ class _LogExerciseSheetState extends ConsumerState<LogExerciseSheet> {
       return;
     }
     try {
-      final parsed = await service.parseTranscript(_promptText);
+      // The burn engine prices the exercise from the user's latest weigh-in.
+      final weighIns = ref.read(weighInsProvider).value ?? const [];
+      final weightKg = weighIns.isEmpty ? null : weighIns.first.weightKg;
+      final parsed = await service.parseTranscript(_promptText, weightKg: weightKg);
       if (!mounted) return;
       setState(() {
         _parsed = parsed;
@@ -82,12 +85,12 @@ class _LogExerciseSheetState extends ConsumerState<LogExerciseSheet> {
     final parsed = _parsed;
     if (parsed == null) return;
     ref.read(selectedDayProvider.notifier).setDay(DateTime.now());
-    await ref.read(dayLogsProvider.notifier).add(
-          parsed.toEntry(
-            timestamp: DateTime.now().millisecondsSinceEpoch,
-            rawTranscript: _promptText,
-          ),
-        );
+    for (final entry in parsed.toEntries(
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      rawTranscript: _promptText,
+    )) {
+      await ref.read(dayLogsProvider.notifier).add(entry);
+    }
     if (!mounted) return;
     Navigator.of(context).pop();
     AppToast.show(context, 'Logged as exercise');

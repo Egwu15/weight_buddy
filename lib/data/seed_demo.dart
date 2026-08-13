@@ -163,8 +163,11 @@ LogEntry _exercise(
   int hour,
   int minute,
   String summary,
-  double kcal,
-) =>
+  double kcal, {
+  int? sets,
+  int? reps,
+  double? durationMinutes,
+}) =>
     LogEntry(
       timestamp: DateTime(day.year, day.month, day.day, hour, minute)
           .millisecondsSinceEpoch,
@@ -175,6 +178,9 @@ LogEntry _exercise(
       carbsG: 0,
       fatG: 0,
       rawTranscript: summary,
+      sets: sets,
+      reps: reps,
+      durationMinutes: durationMinutes,
     );
 
 const _jollofLunch = [
@@ -369,17 +375,38 @@ MealType _seedMealType(int hour, String summary) {
 /// Workouts for a specific day offset.
 List<LogEntry> _dayExercises(DateTime day) {
   return switch (_dayOffset(day)) {
-    0 => [_exercise(day, 18, 30, '30 min moderate treadmill run', 300)],
-    1 => [_exercise(day, 19, 0, '45 min brisk evening walk', 210)],
-    2 => [_exercise(day, 18, 15, '30 min bodyweight strength circuit', 240)],
+    0 => [
+        _exercise(day, 18, 30, '30 min moderate treadmill run', 300,
+            durationMinutes: 30),
+      ],
+    1 => [
+        _exercise(day, 19, 0, '45 min brisk evening walk', 210,
+            durationMinutes: 45),
+      ],
+    2 => [
+        _exercise(day, 18, 15, '30 min bodyweight strength circuit', 240,
+            sets: 3, reps: 12, durationMinutes: 30),
+      ],
     3 => const <LogEntry>[],
-    5 => [_exercise(day, 18, 30, '30 min cycle at the gym', 260)],
+    5 => [
+        _exercise(day, 18, 30, '30 min cycle at the gym', 260,
+            durationMinutes: 30),
+      ],
     6 => const <LogEntry>[],
-    7 => [_exercise(day, 18, 0, '30 min treadmill intervals', 340)],
+    7 => [
+        _exercise(day, 18, 0, '30 min treadmill intervals', 340,
+            durationMinutes: 30),
+      ],
     8 => const <LogEntry>[],
-    10 => [_exercise(day, 18, 15, '40 min brisk walk', 190)],
+    10 => [
+        _exercise(day, 18, 15, '40 min brisk walk', 190,
+            durationMinutes: 40),
+      ],
     11 => const <LogEntry>[],
-    12 => [_exercise(day, 18, 30, '30 min upper-body strength workout', 230)],
+    12 => [
+        _exercise(day, 18, 30, '30 min upper-body strength workout', 230,
+            sets: 3, reps: 10, durationMinutes: 30),
+      ],
     _ => const <LogEntry>[],
   };
 }

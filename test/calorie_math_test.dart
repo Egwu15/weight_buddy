@@ -74,6 +74,27 @@ void main() {
       );
       expect(estimate.round(), 2301);
     });
+
+    test('spec regression: male 31y, 87 kg, 168 cm, sedentary → 2,124', () {
+      // BMR = 870 + 1050 − 155 + 5 = 1,770; × 1.2 = 2,124. Sedentary must
+      // never slip to 1.375 and inflate this toward ~2,450.
+      final bmr = CalorieMath.bmr(
+        weightKg: 87,
+        heightCm: 168,
+        age: 31,
+        sex: Sex.male,
+      );
+      expect(bmr, 1770);
+      final tdee = CalorieMath.maintenance(
+        weightKg: 87,
+        heightCm: 168,
+        age: 31,
+        sex: Sex.male,
+        activity: ActivityLevel.sedentary,
+      );
+      expect(tdee, 2124);
+      expect(tdee, lessThan(2200));
+    });
   });
 
   group('enums', () {

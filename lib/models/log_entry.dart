@@ -81,6 +81,9 @@ class LogEntry {
     required this.rawTranscript,
     this.items = const [],
     this.mealType = MealType.meal,
+    this.sets,
+    this.reps,
+    this.durationMinutes,
   });
 
   final int? id;
@@ -106,10 +109,23 @@ class LogEntry {
   /// means unknown/legacy; exercises always use the default.
   final MealType mealType;
 
+  /// Optional structured exercise context: sets × reps for strength work and
+  /// duration in minutes for time-based activities. Null for meals and legacy
+  /// rows.
+  final int? sets;
+  final int? reps;
+  final double? durationMinutes;
+
   /// Optional extra context for exercise entries (duration, activity name).
   String? get activity => null;
 
-  LogEntry copyWith({int? id}) => LogEntry(
+  LogEntry copyWith({
+    int? id,
+    int? sets,
+    int? reps,
+    double? durationMinutes,
+  }) =>
+      LogEntry(
         id: id ?? this.id,
         timestamp: timestamp,
         type: type,
@@ -121,6 +137,9 @@ class LogEntry {
         rawTranscript: rawTranscript,
         items: items,
         mealType: mealType,
+        sets: sets ?? this.sets,
+        reps: reps ?? this.reps,
+        durationMinutes: durationMinutes ?? this.durationMinutes,
       );
 
   Map<String, Object?> toMap() => {
@@ -134,6 +153,9 @@ class LogEntry {
         'raw_transcript': rawTranscript,
         'items': jsonEncode(items.map((i) => i.toJson()).toList()),
         'meal_type': mealType.apiName,
+        'sets': sets,
+        'reps': reps,
+        'duration_minutes': durationMinutes,
       };
 
   factory LogEntry.fromMap(Map<String, Object?> map) {
@@ -161,6 +183,9 @@ class LogEntry {
       items: items,
       mealType:
           MealType.fromApiName((map['meal_type'] as String?) ?? 'meal'),
+      sets: (map['sets'] as num?)?.toInt(),
+      reps: (map['reps'] as num?)?.toInt(),
+      durationMinutes: (map['duration_minutes'] as num?)?.toDouble(),
     );
   }
 }

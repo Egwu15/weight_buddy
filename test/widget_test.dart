@@ -624,6 +624,25 @@ void main() {
         expect(tagged.mealType, MealType.lunch);
         expect(await db.dayMaintenance(DateTime.now()), 2350);
 
+        // v4: structured exercise context round-trips.
+        await db.insertLog(LogEntry(
+          timestamp: now + 1,
+          type: EntryType.exercise,
+          summary: '20 dips',
+          calories: 7,
+          proteinG: 0,
+          carbsG: 0,
+          fatG: 0,
+          rawTranscript: '20 dips',
+          sets: 1,
+          reps: 20,
+          durationMinutes: 0.75,
+        ), maintenanceKcal: 2350);
+        final dips = (await db.allLogs()).firstWhere((e) => e.summary == '20 dips');
+        expect(dips.sets, 1);
+        expect(dips.reps, 20);
+        expect(dips.durationMinutes, 0.75);
+
         // Wipe clears all user data (snapshots included) but keeps settings.
         await db.wipeAllData();
         expect(await db.weighIns(), isEmpty);
@@ -636,7 +655,7 @@ void main() {
       });
     });
 
-    testWidgets('a v2 database migrates to v3 (meal_type + day maintenance)',
+    testWidgets('a v2 database migrates to v4 (meal_type, day maintenance, exercise fields)',
         (tester) async {
       await tester.runAsync(() async {
         sqfliteFfiInit();
@@ -686,6 +705,27 @@ void main() {
         // Legacy rows default to the generic meal type.
         expect(logs.first.mealType, MealType.meal);
 
+        // The v4 migration also adds the structured exercise columns, so a
+        // workout logged on a migrated install keeps its sets/reps/duration.
+        await db.insertLog(LogEntry(
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          type: EntryType.exercise,
+          summary: '10 pull-ups',
+          calories: 5,
+          proteinG: 0,
+          carbsG: 0,
+          fatG: 0,
+          rawTranscript: '10 pull-ups',
+          sets: 1,
+          reps: 10,
+          durationMinutes: 0.5,
+        ), maintenanceKcal: 2400);
+        final pullUps = (await db.allLogs())
+            .firstWhere((e) => e.summary == '10 pull-ups');
+        expect(pullUps.sets, 1);
+        expect(pullUps.reps, 10);
+        expect(pullUps.durationMinutes, 0.5);
+
         await db.insertLog(LogEntry(
           timestamp: DateTime.now().millisecondsSinceEpoch,
           type: EntryType.meal,
@@ -698,7 +738,7 @@ void main() {
           mealType: MealType.lunch,
         ), maintenanceKcal: 2400);
         final all = await db.allLogs();
-        expect(all, hasLength(2));
+        expect(all, hasLength(3));
         final legacy = all.firstWhere((e) => e.summary == 'Legacy meal');
         final lunch = all.firstWhere((e) => e.summary == 'New lunch');
         expect(legacy.mealType, MealType.meal);

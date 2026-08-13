@@ -21,7 +21,7 @@ class AppDatabase {
   final Database _db;
 
   static const _dbName = 'weight_buddy.db';
-  static const _dbVersion = 3;
+  static const _dbVersion = 4;
 
   /// Opens (and migrates) the local database.
   ///
@@ -49,6 +49,9 @@ class AppDatabase {
           if (oldVersion < 3) {
             await _createV3Migration(db);
           }
+          if (oldVersion < 4) {
+            await _createV4Migration(db);
+          }
         },
       ),
     );
@@ -68,7 +71,10 @@ class AppDatabase {
         fat_g REAL NOT NULL DEFAULT 0,
         raw_transcript TEXT NOT NULL DEFAULT '',
         items TEXT NOT NULL DEFAULT '[]',
-        meal_type TEXT NOT NULL DEFAULT 'meal'
+        meal_type TEXT NOT NULL DEFAULT 'meal',
+        sets INTEGER,
+        reps INTEGER,
+        duration_minutes REAL
       )
     ''');
     await db.execute('CREATE INDEX idx_logs_timestamp ON logs (timestamp)');
@@ -156,6 +162,14 @@ class AppDatabase {
         maintenance_kcal REAL NOT NULL
       )
     ''');
+  }
+
+  /// v4: logs gains structured exercise context (sets, reps, duration) so a
+  /// logged workout keeps the numbers the burn was computed from.
+  static Future<void> _createV4Migration(Database db) async {
+    await db.execute('ALTER TABLE logs ADD COLUMN sets INTEGER');
+    await db.execute('ALTER TABLE logs ADD COLUMN reps INTEGER');
+    await db.execute('ALTER TABLE logs ADD COLUMN duration_minutes REAL');
   }
 
   // ---------------------------------------------------------------------
