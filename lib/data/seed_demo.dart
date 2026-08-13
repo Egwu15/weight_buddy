@@ -183,6 +183,28 @@ LogEntry _exercise(
       durationMinutes: durationMinutes,
     );
 
+/// A strength-circuit workout: one timeline row with the exercises nested
+/// underneath as items — the same shape a meal has for its foods.
+LogEntry _circuit(
+  DateTime day,
+  int hour,
+  int minute,
+  String summary,
+  List<ExerciseItem> items,
+) =>
+    LogEntry(
+      timestamp: DateTime(day.year, day.month, day.day, hour, minute)
+          .millisecondsSinceEpoch,
+      type: EntryType.exercise,
+      summary: summary,
+      calories: items.fold(0, (s, i) => s + i.caloriesBurned),
+      proteinG: 0,
+      carbsG: 0,
+      fatG: 0,
+      rawTranscript: summary,
+      exerciseItems: items,
+    );
+
 const _jollofLunch = [
   MealItem(
       name: 'Jollof Rice',
@@ -372,20 +394,61 @@ MealType _seedMealType(int hour, String summary) {
   return MealType.dinner;
 }
 
-/// Workouts for a specific day offset.
+/// Workouts for a specific day offset. Strength days are one timeline entry
+/// with the exercises nested underneath (a circuit), while cardio days stay a
+/// single activity — and the counts vary (three-exercise sessions, a lighter
+/// two-exercise day, single cardio).
 List<LogEntry> _dayExercises(DateTime day) {
   return switch (_dayOffset(day)) {
     0 => [
-        _exercise(day, 18, 30, '30 min moderate treadmill run', 300,
-            durationMinutes: 30),
+        // Leg Day A — the session the coach recommended in the demo chat.
+        _circuit(day, 18, 15, 'Leg day: squats, lunges and deadlifts', const [
+          ExerciseItem(
+              name: 'Bodyweight squats',
+              sets: 3,
+              reps: 12,
+              durationMinutes: 6,
+              caloriesBurned: 70),
+          ExerciseItem(
+              name: 'Walking lunges',
+              sets: 3,
+              reps: 10,
+              durationMinutes: 7,
+              caloriesBurned: 80),
+          ExerciseItem(
+              name: 'Romanian deadlifts',
+              sets: 3,
+              reps: 10,
+              durationMinutes: 7,
+              caloriesBurned: 90),
+        ]),
       ],
     1 => [
         _exercise(day, 19, 0, '45 min brisk evening walk', 210,
             durationMinutes: 45),
       ],
     2 => [
-        _exercise(day, 18, 15, '30 min bodyweight strength circuit', 240,
-            sets: 3, reps: 12, durationMinutes: 30),
+        _circuit(day, 18, 15, 'Upper body: push-ups, pull-ups and rows',
+            const [
+          ExerciseItem(
+              name: 'Push-ups',
+              sets: 3,
+              reps: 12,
+              durationMinutes: 6,
+              caloriesBurned: 75),
+          ExerciseItem(
+              name: 'Pull-ups',
+              sets: 3,
+              reps: 8,
+              durationMinutes: 6,
+              caloriesBurned: 85),
+          ExerciseItem(
+              name: 'Dumbbell rows',
+              sets: 3,
+              reps: 10,
+              durationMinutes: 6,
+              caloriesBurned: 70),
+        ]),
       ],
     3 => const <LogEntry>[],
     5 => [
@@ -404,8 +467,21 @@ List<LogEntry> _dayExercises(DateTime day) {
       ],
     11 => const <LogEntry>[],
     12 => [
-        _exercise(day, 18, 30, '30 min upper-body strength workout', 230,
-            sets: 3, reps: 10, durationMinutes: 30),
+        // A shorter session — variety in both count and volume.
+        _circuit(day, 18, 30, 'Legs: goblet squats and glute bridges', const [
+          ExerciseItem(
+              name: 'Goblet squats',
+              sets: 3,
+              reps: 12,
+              durationMinutes: 5,
+              caloriesBurned: 65),
+          ExerciseItem(
+              name: 'Glute bridges',
+              sets: 3,
+              reps: 15,
+              durationMinutes: 6,
+              caloriesBurned: 75),
+        ]),
       ],
     _ => const <LogEntry>[],
   };

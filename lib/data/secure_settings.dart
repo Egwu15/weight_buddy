@@ -22,4 +22,11 @@ class SecureSettings {
 
   Future<void> writeVocabulary(String value) =>
       _storage.write(key: _keyVocabulary, value: value);
+
+  /// Removes both secrets, returning the app to the unconfigured state it
+  /// starts in on a fresh install.
+  Future<void> clear() async {
+    await _storage.delete(key: _keyApiKey);
+    await _storage.delete(key: _keyVocabulary);
+  }
 }

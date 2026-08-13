@@ -11,6 +11,7 @@ import '../record/record_sheet.dart';
 import '../weigh/weight_card.dart';
 import '../weigh/weight_history_screen.dart';
 import '../widgets/days_wave.dart';
+import '../widgets/entry_details_sheet.dart';
 import '../widgets/ledger_card.dart';
 import '../widgets/macro_plate.dart';
 import '../widgets/record_dock.dart';
@@ -149,6 +150,7 @@ class TodayScreen extends ConsumerWidget {
                     itemCount: logs.length,
                     itemBuilder: (context, i) => TimelineTile(
                       entry: logs[i],
+                      onTap: () => showEntryDetails(context, logs[i]),
                       onDelete: () => _confirmDelete(context, ref, logs[i]),
                     ),
                     separatorBuilder: (_, _) => const SizedBox(height: 10),

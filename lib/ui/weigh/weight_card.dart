@@ -17,7 +17,6 @@ class WeightCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final weighInsAsync = ref.watch(weighInsProvider);
-    final unit = ref.watch(appSettingsProvider).value?.weightUnit ?? 'kg';
     final weighIns = weighInsAsync.value ?? const <WeighIn>[];
 
     if (weighIns.isEmpty) {
@@ -76,8 +75,8 @@ class WeightCard extends ConsumerWidget {
                     baseline == null
                         ? 'first reading'
                         : (delta == null || delta <= 0
-                            ? '−${Formatters.weight(delta?.abs() ?? 0, unit)} $unit'
-                            : '+${Formatters.weight(delta, unit)} $unit'),
+                            ? '−${Formatters.weight(delta?.abs() ?? 0)} kg'
+                            : '+${Formatters.weight(delta)} kg'),
                     style: AppText.label(
                       color: baseline == null || delta == null || delta <= 0
                           ? AppColors.ugu
@@ -91,14 +90,14 @@ class WeightCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    Formatters.weight(latest.weightKg, unit),
+                    Formatters.weight(latest.weightKg),
                     style: AppText.dataL(color: AppColors.plantain),
                   ),
                   const SizedBox(width: 6),
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
-                    child:
-                        Text(unit, style: AppText.label(color: AppColors.smoke)),
+                    child: Text('kg',
+                        style: AppText.label(color: AppColors.smoke)),
                   ),
                 ],
               ),

@@ -37,7 +37,7 @@ class SettingsScreen extends StatelessWidget {
           _SettingsTile(
             icon: Icons.insights_rounded,
             title: 'Targets & profile',
-            subtitle: 'Maintenance, units, height, age, sex, activity',
+            subtitle: 'Maintenance, height, birthday, sex, activity',
             onTap: () => _open(context, const TargetsScreen()),
           ),
           const SizedBox(height: 8),

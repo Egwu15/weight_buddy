@@ -32,6 +32,21 @@ void main() {
     expect(todayLogs.any((e) => e.mealType == MealType.dinner), isTrue);
     expect(todayLogs.any((e) => e.mealType == MealType.snack), isTrue);
 
+    // Strength days are circuits: today's Leg Day A is one timeline row with
+    // three exercises nested underneath, like a meal's items.
+    final todayWorkouts =
+        todayLogs.where((e) => e.type == EntryType.exercise).toList();
+    expect(todayWorkouts, hasLength(1));
+    final legDay = todayWorkouts.single;
+    expect(legDay.summary, 'Leg day: squats, lunges and deadlifts');
+    expect(legDay.exerciseItems, hasLength(3));
+    expect(
+      legDay.exerciseItems.map((i) => i.name),
+      containsAll(['Bodyweight squats', 'Walking lunges', 'Romanian deadlifts']),
+    );
+    // The entry carries the session's total burn.
+    expect(legDay.calories, 240);
+
     // Every seeded day snapshots the maintenance target in effect.
     expect(await db.dayMaintenance(DateTime.now()), 2300);
 
@@ -53,11 +68,13 @@ void main() {
     await seedDemoData(db);
     await db.wipeAllData();
 
-    // The marker survives the wipe, so a plain seed is a no-op…
+    // A full wipe clears the marker and settings too, so a plain seed is a
+    // fresh reseed rather than a no-op…
     await seedDemoData(db);
-    expect(await db.allLogs(), isEmpty);
+    expect(await db.allLogs(), isNotEmpty);
 
-    // …but force reseeds the whole dataset.
+    // …and force still reseeds the whole dataset from any state.
+    await db.wipeAllData();
     await seedDemoData(db, force: true);
     expect(await db.allLogs(), isNotEmpty);
     expect(await db.memories(), isNotEmpty);

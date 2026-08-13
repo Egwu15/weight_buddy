@@ -39,6 +39,17 @@ enum ActivityLevel {
       ActivityLevel.values.asNameMap()[name?.trim() ?? ''];
 }
 
+/// Whole years between a [birthday] and the date [on] (usually today). Age is
+/// derived from the birthday instead of persisted, so it never goes stale —
+/// the estimate quietly ticks up every birthday on its own.
+int ageFromBirthday(DateTime birthday, DateTime on) {
+  var age = on.year - birthday.year;
+  final notHadBirthdayYet = on.month < birthday.month ||
+      (on.month == birthday.month && on.day < birthday.day);
+  if (notHadBirthdayYet) age--;
+  return age;
+}
+
 /// Pure calorie math. No I/O — trivially unit-testable.
 abstract final class CalorieMath {
   /// Basal metabolic rate via Mifflin-St Jeor:

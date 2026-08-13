@@ -922,6 +922,19 @@ class _ExerciseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final duration = exercise.durationMinutes;
+    // Natural speech often gives reps without sets ("10 pressups") — show
+    // whatever structure the speaker actually gave.
+    final parts = <String>[
+      if (exercise.sets != null && exercise.reps != null)
+        '${exercise.sets} × ${exercise.reps} reps'
+      else if (exercise.reps != null)
+        '${exercise.reps} reps',
+      if (duration != null) '${Formatters.grams(duration)} min',
+    ];
+    final subtitle = parts.isEmpty
+        ? '${Formatters.kcal(exercise.caloriesBurned)} kcal burned'
+        : '${parts.join(' · ')} · '
+            '${Formatters.kcal(exercise.caloriesBurned)} kcal burned';
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -943,8 +956,7 @@ class _ExerciseCard extends StatelessWidget {
                 Text(exercise.name, style: AppText.title()),
                 const SizedBox(height: 2),
                 Text(
-                  '${duration != null ? '${Formatters.grams(duration)} min · ' : ''}'
-                  '${Formatters.kcal(exercise.caloriesBurned)} kcal burned',
+                  subtitle,
                   style: AppText.dataS(color: AppColors.smoke),
                 ),
               ],

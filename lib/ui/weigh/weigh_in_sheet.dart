@@ -28,14 +28,9 @@ class _WeighInSheetState extends ConsumerState<WeighInSheet> {
   final _weightController = TextEditingController();
   final _noteController = TextEditingController();
   late DateTime _date = DateTime.now();
-  late String _unit;
+  // Unit is a per-entry input choice; weight is always stored in kg.
+  String _unit = 'kg';
   String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _unit = ref.read(appSettingsProvider).value?.weightUnit ?? 'kg';
-  }
 
   @override
   void dispose() {

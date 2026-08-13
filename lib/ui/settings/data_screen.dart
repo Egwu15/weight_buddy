@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/secure_settings.dart';
 import '../../data/seed_demo.dart';
 import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
@@ -23,10 +24,12 @@ class _DataScreenState extends ConsumerState<DataScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.bark,
-        title: const Text('Delete all entries?'),
+        title: const Text('Reset the app?'),
         content: const Text(
             'Every meal, workout, weigh-in, chat, memory and saved workout '
-            'on this device will be removed. This can’t be undone.'),
+            'will be removed, and your profile and OpenAI key will be cleared. '
+            'You’ll go through onboarding again, like a brand-new install. '
+            'This can’t be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -38,7 +41,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
               foregroundColor: AppColors.pot,
             ),
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete everything'),
+            child: const Text('Reset app'),
           ),
         ],
       ),
@@ -46,14 +49,25 @@ class _DataScreenState extends ConsumerState<DataScreen> {
     if (confirmed != true || !mounted) return;
     final db = await ref.read(databaseProvider.future);
     await db.wipeAllData();
+    // Clear the platform secrets too, so the coach starts unconfigured.
+    // Best-effort: a secure-store failure must never block the reset.
+    try {
+      await SecureSettings().clear();
+    } catch (_) {}
+    // Every provider must re-read: the shell watches app settings and flips
+    // back to the onboarding questionnaire once the profile flag is gone.
+    ref.invalidate(appSettingsProvider);
+    ref.invalidate(settingsProvider);
     ref.invalidate(dayLogsProvider);
     ref.invalidate(weighInsProvider);
     ref.invalidate(chatMessagesProvider);
     ref.invalidate(memoriesProvider);
     ref.invalidate(exercisesProvider);
+    // With the reminder reset to off, this cancels any scheduled nudge.
     await ref.read(rearmDailyReminderProvider)(db: db);
     if (!mounted) return;
-    AppToast.show(context, 'All entries deleted');
+    AppToast.show(context, 'App reset — fresh install, welcome back');
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   /// Fills the app with a realistic “busy week” so the screens can be
@@ -88,7 +102,11 @@ class _DataScreenState extends ConsumerState<DataScreen> {
     );
     if (confirmed != true || !mounted) return;
     final db = await ref.read(databaseProvider.future);
+    // The wipe clears settings too now; hold onto the profile/targets and
+    // restore them so the demo only replaces records, as promised above.
+    final settingsBefore = await ref.read(appSettingsProvider.future);
     await db.wipeAllData();
+    await ref.read(appSettingsProvider.notifier).save(settingsBefore);
     await seedDemoData(db, force: true);
     ref.invalidate(dayLogsProvider);
     ref.invalidate(weighInsProvider);
@@ -117,7 +135,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
           const SizedBox(height: 8),
           Text(
             'Everything is stored on this device. Delete the lot whenever '
-            'you want a clean slate.',
+            'you want a clean slate — it resets the app to a fresh install.',
             style: AppText.bodyMuted(),
           ),
           const SizedBox(height: 12),

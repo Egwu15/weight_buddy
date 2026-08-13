@@ -83,12 +83,9 @@ class ParsedLog {
   LogEntry toEntry({required int timestamp, required String rawTranscript}) =>
       toEntries(timestamp: timestamp, rawTranscript: rawTranscript).first;
 
-  /// One row per parsed item (meals) or per parsed exercise. Meals always
-  /// produce a single entry; exercises produce one entry per exercise in the
-  /// `exercises` array so a workout that mentions several exercises records
-  /// them all. Rows for the same parse get a +1 ms timestamp bump so the
-  /// timeline shows them in the order they were spoken (it orders by
-  /// timestamp only).
+  /// One row per parsed item for meals; a single row per workout with the
+  /// exercises nested underneath as items, so a multi-exercise session reads
+  /// in the timeline exactly like a meal — one entry, items beneath it.
   List<LogEntry> toEntries({
     required int timestamp,
     required String rawTranscript,
@@ -110,41 +107,34 @@ class ParsedLog {
       ];
     }
     final list = exerciseList;
-    if (list.length == 1) {
-      final e = list.first;
-      return [
-        LogEntry(
-          timestamp: timestamp,
-          type: type,
-          summary: summary.isNotEmpty ? summary : e.name,
-          calories: e.caloriesBurned,
-          proteinG: 0,
-          carbsG: 0,
-          fatG: 0,
-          rawTranscript: rawTranscript,
-          mealType: mealType,
-          sets: e.sets,
-          reps: e.reps,
-          durationMinutes: e.durationMinutes,
-        ),
-      ];
-    }
+    final totalBurned = list.fold(0.0, (s, e) => s + e.caloriesBurned);
     return [
-      for (var i = 0; i < list.length; i++)
-        LogEntry(
-          timestamp: timestamp + i,
-          type: type,
-          summary: list[i].name,
-          calories: list[i].caloriesBurned,
-          proteinG: 0,
-          carbsG: 0,
-          fatG: 0,
-          rawTranscript: rawTranscript,
-          mealType: mealType,
-          sets: list[i].sets,
-          reps: list[i].reps,
-          durationMinutes: list[i].durationMinutes,
-        ),
+      LogEntry(
+        timestamp: timestamp,
+        type: type,
+        summary: summary.isNotEmpty ? summary : list.first.name,
+        calories: totalBurned,
+        proteinG: 0,
+        carbsG: 0,
+        fatG: 0,
+        rawTranscript: rawTranscript,
+        mealType: mealType,
+        exerciseItems: [
+          for (final e in list)
+            ExerciseItem(
+              name: e.name,
+              sets: e.sets,
+              reps: e.reps,
+              durationMinutes: e.durationMinutes,
+              caloriesBurned: e.caloriesBurned,
+            ),
+        ],
+        // Keep the legacy single-exercise fields populated so old rows and
+        // single-exercise entries still read the same.
+        sets: list.length == 1 ? list.first.sets : null,
+        reps: list.length == 1 ? list.first.reps : null,
+        durationMinutes: list.length == 1 ? list.first.durationMinutes : null,
+      ),
     ];
   }
 }

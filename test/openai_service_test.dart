@@ -107,6 +107,91 @@ void main() {
       expect(parsed.durationMinutes, 30);
     });
 
+    test('legacy single-exercise shape still yields one row via exerciseList',
+        () async {
+      // The exercises array may be absent (older model responses): the
+      // top-level activity/duration/calories shape must still behave like a
+      // one-exercise workout — the compatibility seam of the list change.
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'content': jsonEncode({
+                    'entry_type': 'exercise',
+                    'summary': '30 min treadmill run',
+                    'meal_type': null,
+                    'items': <Object>[],
+                    'total_calories': 0,
+                    'total_protein_g': 0,
+                    'total_carbs_g': 0,
+                    'total_fat_g': 0,
+                    'activity': 'Treadmill Running',
+                    'duration_minutes': 30,
+                    'estimated_calories_burned': 300,
+                  }),
+                }
+              }
+            ]
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final service = OpenAIService(client: client, apiKey: 'sk-test');
+      final parsed = await service.parseTranscript('I ran on the treadmill');
+      // No exercises array in the payload, but the list view still contains
+      // a single exercise synthesised from the legacy fields.
+      expect(parsed.exerciseList, hasLength(1));
+      expect(parsed.exerciseList.single.name, 'Treadmill Running');
+      expect(parsed.exerciseList.single.durationMinutes, 30);
+      final entries = parsed.toEntries(timestamp: 0, rawTranscript: 'raw');
+      expect(entries, hasLength(1));
+      expect(entries.single.calories, 300);
+    });
+
+    test('legacy duration-only shape is priced by MET when weight is known',
+        () async {
+      // Same old shape, but with the user's weight: the engine replaces the
+      // model's guess (300) with the MET figure — running ≈ 9.8 MET over
+      // 30 minutes at 87 kg.
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'content': jsonEncode({
+                    'entry_type': 'exercise',
+                    'summary': '30 min treadmill run',
+                    'meal_type': null,
+                    'items': <Object>[],
+                    'total_calories': 0,
+                    'total_protein_g': 0,
+                    'total_carbs_g': 0,
+                    'total_fat_g': 0,
+                    'activity': 'Treadmill Running',
+                    'duration_minutes': 30,
+                    'estimated_calories_burned': 300,
+                  }),
+                }
+              }
+            ]
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final service = OpenAIService(client: client, apiKey: 'sk-test');
+      final parsed =
+          await service.parseTranscript('I ran on the treadmill', weightKg: 87);
+      // 9.8 × 3.5 × 87 / 200 × 30 ≈ 447.6 kcal.
+      expect(parsed.calories, closeTo(447.6, 0.5));
+      expect(parsed.calories, isNot(300));
+      expect(parsed.exerciseList.single.caloriesBurned, closeTo(447.6, 0.5));
+    });
+
     test('parseTranscript keeps every exercise in the exercises array',
         () async {
       final client = MockClient((request) async {
@@ -157,12 +242,18 @@ void main() {
       final entries = parsed.toEntries(timestamp: 0, rawTranscript: 'raw');
       expect(parsed.type, EntryType.exercise);
       expect(parsed.exerciseList, hasLength(2));
-      expect(entries, hasLength(2));
-      expect(entries[0].summary, 'Knee Press-ups');
-      expect(entries[1].summary, 'Dips');
-      // Rows get a +1 ms timestamp bump so the timeline shows them in the
-      // order they were spoken (it orders by timestamp only).
-      expect(entries[1].timestamp, entries[0].timestamp + 1);
+      // One timeline row with the exercises nested underneath — the same
+      // shape a meal has for its food items.
+      expect(entries, hasLength(1));
+      final workout = entries.single;
+      expect(workout.summary, '5 knee press-ups and 5 dips');
+      expect(workout.exerciseItems, hasLength(2));
+      expect(workout.exerciseItems[0].name, 'Knee Press-ups');
+      expect(workout.exerciseItems[1].name, 'Dips');
+      expect(workout.exerciseItems[1].sets, 1);
+      expect(workout.exerciseItems[1].reps, 5);
+      // Calories aggregate across the session.
+      expect(workout.calories, 140);
     });
 
     test('burn is computed deterministically when the weight is known',

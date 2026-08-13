@@ -67,6 +67,47 @@ class MealItem {
       );
 }
 
+/// A single exercise inside a logged workout. The workout is one timeline
+/// entry, its exercises nested underneath — the mirror image of a meal's
+/// [MealItem]s.
+class ExerciseItem {
+  const ExerciseItem({
+    required this.name,
+    this.sets,
+    this.reps,
+    this.durationMinutes,
+    required this.caloriesBurned,
+  });
+
+  final String name;
+
+  /// Sets and reps when the speaker gave them.
+  final int? sets;
+  final int? reps;
+
+  /// Minutes of activity for time-based work.
+  final double? durationMinutes;
+
+  /// The burn this exercise was logged with.
+  final double caloriesBurned;
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'sets': sets,
+        'reps': reps,
+        'duration_minutes': durationMinutes,
+        'calories_burned': caloriesBurned,
+      };
+
+  factory ExerciseItem.fromJson(Map<String, dynamic> json) => ExerciseItem(
+        name: (json['name'] ?? '').toString(),
+        sets: (json['sets'] as num?)?.toInt(),
+        reps: (json['reps'] as num?)?.toInt(),
+        durationMinutes: (json['duration_minutes'] as num?)?.toDouble(),
+        caloriesBurned: (json['calories_burned'] as num?)?.toDouble() ?? 0,
+      );
+}
+
 /// One row in the local log — a meal or an exercise.
 class LogEntry {
   const LogEntry({
@@ -80,6 +121,7 @@ class LogEntry {
     required this.fatG,
     required this.rawTranscript,
     this.items = const [],
+    this.exerciseItems = const [],
     this.mealType = MealType.meal,
     this.sets,
     this.reps,
@@ -105,6 +147,12 @@ class LogEntry {
   /// Parsed food items (meals only).
   final List<MealItem> items;
 
+  /// The exercises that make up a workout, one row under the entry — the
+  /// workout equivalent of a meal's [items]. Empty for meals and for legacy
+  /// single-exercise rows (which carry [sets]/[reps]/[durationMinutes]
+  /// directly).
+  final List<ExerciseItem> exerciseItems;
+
   /// Which meal of the day this is (breakfast/lunch/dinner/snack). `meal`
   /// means unknown/legacy; exercises always use the default.
   final MealType mealType;
@@ -119,11 +167,24 @@ class LogEntry {
   /// Optional extra context for exercise entries (duration, activity name).
   String? get activity => null;
 
+  /// Title shown in the timeline row and the entry-details headline: the
+  /// spoken summary for meals, the exercise name for a single-exercise
+  /// workout, and "First exercise + N more" when a workout bundles several
+  /// exercises.
+  String get displayTitle {
+    if (type != EntryType.exercise || exerciseItems.isEmpty) return summary;
+    final first = exerciseItems.first.name.trim();
+    if (first.isEmpty) return summary;
+    if (exerciseItems.length == 1) return first;
+    return '$first + ${exerciseItems.length - 1} more';
+  }
+
   LogEntry copyWith({
     int? id,
     int? sets,
     int? reps,
     double? durationMinutes,
+    List<ExerciseItem>? exerciseItems,
   }) =>
       LogEntry(
         id: id ?? this.id,
@@ -136,6 +197,7 @@ class LogEntry {
         fatG: fatG,
         rawTranscript: rawTranscript,
         items: items,
+        exerciseItems: exerciseItems ?? this.exerciseItems,
         mealType: mealType,
         sets: sets ?? this.sets,
         reps: reps ?? this.reps,
@@ -151,7 +213,11 @@ class LogEntry {
         'carbs_g': carbsG,
         'fat_g': fatG,
         'raw_transcript': rawTranscript,
-        'items': jsonEncode(items.map((i) => i.toJson()).toList()),
+        'items': jsonEncode(
+          type == EntryType.meal
+              ? items.map((i) => i.toJson()).toList()
+              : exerciseItems.map((i) => i.toJson()).toList(),
+        ),
         'meal_type': mealType.apiName,
         'sets': sets,
         'reps': reps,
@@ -159,21 +225,31 @@ class LogEntry {
       };
 
   factory LogEntry.fromMap(Map<String, Object?> map) {
+    final type = EntryType.fromApiName((map['type'] as String?) ?? 'meal');
     final itemsRaw = map['items'] as String?;
     List<MealItem> items = const [];
+    List<ExerciseItem> exerciseItems = const [];
     if (itemsRaw != null && itemsRaw.isNotEmpty) {
       try {
-        items = (jsonDecode(itemsRaw) as List)
-            .map((e) => MealItem.fromJson(e as Map<String, dynamic>))
-            .toList();
+        final decoded = jsonDecode(itemsRaw) as List;
+        if (type == EntryType.meal) {
+          items = decoded
+              .map((e) => MealItem.fromJson(e as Map<String, dynamic>))
+              .toList();
+        } else {
+          exerciseItems = decoded
+              .map((e) => ExerciseItem.fromJson(e as Map<String, dynamic>))
+              .toList();
+        }
       } catch (_) {
         items = const [];
+        exerciseItems = const [];
       }
     }
     return LogEntry(
       id: map['id'] as int?,
       timestamp: (map['timestamp'] as num).toInt(),
-      type: EntryType.fromApiName((map['type'] as String?) ?? 'meal'),
+      type: type,
       summary: (map['summary'] as String?) ?? '',
       calories: ((map['calories'] as num?) ?? 0).toDouble(),
       proteinG: ((map['protein_g'] as num?) ?? 0).toDouble(),
@@ -181,6 +257,7 @@ class LogEntry {
       fatG: ((map['fat_g'] as num?) ?? 0).toDouble(),
       rawTranscript: (map['raw_transcript'] as String?) ?? '',
       items: items,
+      exerciseItems: exerciseItems,
       mealType:
           MealType.fromApiName((map['meal_type'] as String?) ?? 'meal'),
       sets: (map['sets'] as num?)?.toInt(),

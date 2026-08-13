@@ -94,7 +94,7 @@ A personal, lightweight mobile/web application that allows a single user to log 
 - **Streaks:** LOG STREAK (consecutive days with ≥1 entry) and ON-PLAN (consecutive days logged *and* at/below maintenance), computed from the last 90 days.
 - **Week & month budget summaries:** two ledger cards above the calendar. The month card follows the existing month navigation; the week card (Monday–Sunday) has its own prev/next arrows. For the **ongoing period** the budget runs from **today → period end** at each day's maintenance target (per-day snapshot, falling back to the current target for days never logged); **LEFT** = budget − net − any overspend carried in from tracked days earlier in the period. **Untracked days count for nothing** — a late sign-in or skipped days never inflate LEFT, and under-eating never banks extra allowance (the card shows a `· TODAY →` marker and a "carries X over" footnote when relevant). Past periods keep the full-period ledger for review; future periods show the whole period's budget.
 - **Navigation:** tapping a calendar day jumps the Today dashboard to that day.
-- Weight unit setting (kg/lb) lives in the same Targets & profile page.
+- **Weight unit (kg/lb):** a per-entry input choice on the weigh-in sheet — readings are always stored and displayed in kg, so there is no global unit setting and nothing to configure on the Targets & profile page.
 
 ### Feature 6: Weight Tracking
 
@@ -157,29 +157,45 @@ A personal, lightweight mobile/web application that allows a single user to log 
 **Status:** Built.
 
 **Description:** On a brand-new install the app asks a few quick questions
-(height, weight, age, sex, activity level) so the daily maintenance-calorie
-target is *estimated* instead of guessed. Existing installs (any logs, a
-weigh-in, or a stored maintenance target) skip the questionnaire entirely.
+(height, weight, date of birth, sex, activity level) so the daily
+maintenance-calorie target is *estimated* instead of guessed. Existing
+installs (any logs, a weigh-in, or a stored maintenance target) skip the
+questionnaire entirely.
 
 **Requirements:**
 
 - **Onboarding gate:** the shell shows the questionnaire until the profile is
   completed (`app_settings.profile_completed`) — there is no skip, so the
   target is personal from the first day; fresh installs only.
-- **Flow, not a form:** a 4-step onboarding (height → weight → age & sex →
+- **Flow, not a form:** a 4-step onboarding (height → weight → birthday & sex →
   activity) with a progress bar, Back/Continue buttons and per-step
   validation.
 - **Questions:** height (cm or ft/in), current weight (kg/lb — saved as
-  today's first weigh-in), age, sex, activity level (5 options, 1.2–1.9
-  factors).
+  today's first weigh-in), **date of birth** (a calendar picker — age is
+  derived from it on the fly, so it never goes stale), sex, activity level
+  (5 options, 1.2–1.9 factors).
 - **Mifflin-St Jeor estimate:** `BMR = 10·kg + 6.25·cm − 5·age + (5 | −161)`,
   maintenance = BMR × activity factor. Shown live on the final step and
   written to the existing `maintenance_kcal` target — the single line the
   calendar, budgets, streaks and coach all measure against.
-- **Editable later:** Settings → Targets & profile gains a Profile section (height in cm
-  or ft/in, age, sex, activity) plus a "Use profile to estimate maintenance"
-  action that pre-fills the manual field from the profile + latest weigh-in. A
-  manual value is never overwritten without pressing that button.
+- **The target IS the estimate (fool-proof editing):** Settings → Targets &
+  profile shows the maintenance number as a **display-only readout** that
+  re-calculates the instant any profile input (height, birthday, sex,
+  activity) changes, using the latest weigh-in for current weight. There is
+  no hidden "apply" step — a regular user just sees the number react.
+- **Manual override is opt-in:** a clearly-labelled "Set my own target"
+  toggle reveals a number field (with a "your profile suggests X" comparison
+  line and a one-tap "Back to automatic" reset), so a professional's
+  recommendation is still possible without confusing everyone else.
+- **Smart target from your own logging:** once there are ≥ 14 days between
+  the user's weigh-ins and ≥ 10 days of food logs, Targets & profile shows an
+  "From your logging" card — an adaptive estimate
+  (`avg daily intake + Δkg × 7,700 / days`) read from their real data.
+  It can be applied as the target, or auto-synced as new logs arrive via the
+  opt-in `smart_target_sync` flag (default off, and clamped to ±15% of the
+  formula estimate so a skipped week can never halve or double the target).
+  Logged workouts already live inside the weight trend, so they are never
+  double-counted.
 
 ## 4. Technical Specifications & API Integration
 
@@ -339,10 +355,10 @@ unknown the burn is honest zero rather than an invented number.
 ### Data Storage Architecture
 
 - **Local Persistence Only:** SQLite via `sqflite` (Hive/IndexedDB were considered and not chosen).
-- **Schema v1:** `logs`: id, timestamp, type (meal/exercise), summary, calories, protein_g, carbs_g, fat_g, raw_transcript, items (JSON array of parsed food items for meals).
+- **Schema v1:** `logs`: id, timestamp, type (meal/exercise), summary, calories, protein_g, carbs_g, fat_g, raw_transcript, items (JSON array of the entry's parsed items — food items for meals, exercise items for workouts).
 - **Schema v2 (migrated via `onUpgrade`):**
   - `weigh_ins`: id, date, weight_kg, note.
-  - `app_settings`: key/value KV for non-secret config (maintenance_kcal, weight_unit, reminder_enabled, reminder_time, memory_enabled, plus the first-run profile: height_cm, age, sex, activity_level, profile_completed).
+  - `app_settings`: key/value KV for non-secret config (maintenance_kcal, reminder_enabled, reminder_time, memory_enabled, smart_target_sync, plus the first-run profile: height_cm, birthday (ISO date; legacy `age` values are synthesised into a birthday on load), sex, activity_level, profile_completed).
   - `chat_messages`: id, role, content, created_at (persisted coach thread).
   - `memories`: id, topic, content, category, source, created_at, updated_at, active — unique active index on topic for latest-wins upsert.
   - `exercise_recommendations`: id, name, description, muscle_groups (JSON), sets, reps, rest_seconds, duration_minutes, difficulty, plan_name, source_chat_id, created_at, archived.
@@ -351,6 +367,8 @@ unknown the burn is honest zero rather than an invented number.
   - `day_maintenance`: day (local-midnight millis, PK) → maintenance_kcal — a per-day snapshot written whenever a log is added, so past days are judged by the target in effect that day.
 - **Schema v4 (migrated via `onUpgrade`):** `logs` gains `sets`, `reps` and `duration_minutes` (nullable) — the structured exercise context the burn was computed from, so logged workouts keep their sets × reps and duration.
 - **Demo data (debug builds):** Settings → Data → "Load demo data" (hidden in release builds) replaces the records with a realistic busy dataset — ~14 days of tagged meals and workouts, a weigh-in trend, a coach conversation, memories and a saved exercise library. Idempotent via a `demo_seeded` marker; OpenAI key and targets are preserved.
+- **Delete all (full reset):** Settings → Data → "Delete all entries" wipes every record, clears `app_settings` (profile, maintenance target, reminder, memory switch, demo marker) and deletes the OpenAI key/vocabulary from the secure store, then pops back to the shell where the first-run onboarding questionnaire appears again — the app returns to a state indistinguishable from a brand-new install.
+
 - **Secrets** (OpenAI key, vocabulary) stay in the platform secure store, never in SQLite.
 - **Coach context** (digest + memories + saved exercises) travels to OpenAI only while chatting; everything else is offline-first.
 

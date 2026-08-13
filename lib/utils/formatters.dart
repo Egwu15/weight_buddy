@@ -35,9 +35,24 @@ abstract final class Formatters {
   static String fullDate(DateTime day) =>
       DateFormat('EEEE, d MMMM yyyy').format(day);
 
-  /// A weight readout in the active unit (kg | lb), one decimal.
-  static String weight(double kg, String unit) {
-    if (unit == 'lb') return (kg * 2.2046226218).toStringAsFixed(1);
-    return kg.toStringAsFixed(1);
+  /// A weight readout in kilograms, one decimal. Weights are always stored
+  /// and displayed in kg — the kg/lb toggle on the weigh-in sheet is only a
+  /// per-entry input convenience.
+  static String weight(double kg) => kg.toStringAsFixed(1);
+
+  /// A local date stored in `app_settings` as a stable, sortable ISO-8601
+  /// date (`yyyy-MM-dd`).
+  static String isoDate(DateTime day) =>
+      DateFormat('yyyy-MM-dd').format(day);
+
+  /// The inverse of [isoDate]; null for absent or malformed values.
+  static DateTime? parseIsoDate(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final d = DateFormat('yyyy-MM-dd').parseStrict(raw.trim());
+      return DateTime(d.year, d.month, d.day);
+    } on FormatException {
+      return null;
+    }
   }
 }

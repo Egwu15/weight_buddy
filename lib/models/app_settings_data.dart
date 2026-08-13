@@ -7,24 +7,21 @@ import '../utils/calorie_math.dart';
 class AppSettingsData {
   const AppSettingsData({
     this.maintenanceKcal = 2200,
-    this.weightUnit = 'kg',
     this.heightUnit = 'cm',
     this.reminderEnabled = false,
     this.reminderTime = const TimeOfDay(hour: 20, minute: 0),
     this.memoryEnabled = true,
     this.heightCm,
-    this.age,
+    this.birthday,
     this.sex,
     this.activityLevel,
     this.profileCompleted = false,
+    this.smartTargetSync = false,
   });
 
   /// The daily target used by the calendar colors and the coach: eat
   /// at/under this to stay on plan.
   final double maintenanceKcal;
-
-  /// 'kg' or 'lb'.
-  final String weightUnit;
 
   /// Display unit for height input ('cm' or 'ft'); the height itself is
   /// always stored in centimetres in [heightCm].
@@ -41,8 +38,9 @@ class AppSettingsData {
   /// Height in centimetres, from onboarding / Settings → Targets.
   final double? heightCm;
 
-  /// Age in years.
-  final int? age;
+  /// Date of birth. Age is derived from it on the fly ([ageOn]) so the
+  /// estimate never uses a stale number.
+  final DateTime? birthday;
 
   final Sex? sex;
 
@@ -52,36 +50,50 @@ class AppSettingsData {
   /// stops showing the questionnaire.
   final bool profileCompleted;
 
+  /// Opt-in: keep the daily target synced with the observed maintenance
+  /// read from the user's own weigh-ins and food logs. Off by default —
+  /// eating more must never silently raise the target.
+  final bool smartTargetSync;
+
+  /// Whole years old on [on] (defaults to today), or null without a
+  /// birthday. Derived, never stored.
+  int? ageOn([DateTime? on]) {
+    final b = birthday;
+    if (b == null) return null;
+    return ageFromBirthday(b, on ?? DateTime.now());
+  }
+
+  /// Whole years old today.
+  int? get age => ageOn();
+
   /// The whole profile is present, so the maintenance estimate can be made.
   bool get hasProfile =>
-      heightCm != null && age != null && sex != null && activityLevel != null;
-
-  bool get usesKg => weightUnit == 'kg';
+      heightCm != null && birthday != null && sex != null && activityLevel != null;
 
   AppSettingsData copyWith({
     double? maintenanceKcal,
-    String? weightUnit,
     String? heightUnit,
     bool? reminderEnabled,
     TimeOfDay? reminderTime,
     bool? memoryEnabled,
     double? heightCm,
-    int? age,
+    DateTime? birthday,
     Sex? sex,
     ActivityLevel? activityLevel,
     bool? profileCompleted,
+    bool? smartTargetSync,
   }) =>
       AppSettingsData(
         maintenanceKcal: maintenanceKcal ?? this.maintenanceKcal,
-        weightUnit: weightUnit ?? this.weightUnit,
         heightUnit: heightUnit ?? this.heightUnit,
         reminderEnabled: reminderEnabled ?? this.reminderEnabled,
         reminderTime: reminderTime ?? this.reminderTime,
         memoryEnabled: memoryEnabled ?? this.memoryEnabled,
         heightCm: heightCm ?? this.heightCm,
-        age: age ?? this.age,
+        birthday: birthday ?? this.birthday,
         sex: sex ?? this.sex,
         activityLevel: activityLevel ?? this.activityLevel,
         profileCompleted: profileCompleted ?? this.profileCompleted,
+        smartTargetSync: smartTargetSync ?? this.smartTargetSync,
       );
 }

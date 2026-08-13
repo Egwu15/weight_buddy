@@ -468,7 +468,10 @@ class AppDatabase {
   // Whole-app wipe
   // ---------------------------------------------------------------------
 
-  /// Removes every user record across all tables (settings preserved).
+  /// Removes every user record and resets all settings to their fresh-install
+  /// defaults: profile, maintenance target, reminder, memory switch and the
+  /// demo marker all go, so the app presents exactly like a brand-new install.
+  /// Secrets live in the platform secure store and are cleared separately.
   Future<void> wipeAllData() async {
     await _db.delete('logs');
     await _db.delete('weigh_ins');
@@ -476,6 +479,7 @@ class AppDatabase {
     await _db.delete('memories');
     await _db.delete('exercise_recommendations');
     await _db.delete('day_maintenance');
+    await _db.delete('app_settings');
   }
 
   Future<void> close() => _db.close();

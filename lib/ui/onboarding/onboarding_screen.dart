@@ -10,7 +10,7 @@ import '../../utils/units.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/profile_selectors.dart';
 
-/// First-run onboarding — a four-step flow (height → weight → age & sex →
+/// First-run onboarding — a four-step flow (height → weight → birthday & sex →
 /// activity) instead of one long form, so each question gets its own screen.
 ///
 /// The questionnaire gates the whole app — there is no skip — so the daily
@@ -32,11 +32,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _heightFeetController = TextEditingController();
   final _heightInchesController = TextEditingController();
   final _weightController = TextEditingController();
-  final _ageController = TextEditingController();
 
   int _step = 0;
   String _heightUnit = 'cm';
   String _weightUnit = 'kg';
+  DateTime? _birthday;
   Sex? _sex;
   ActivityLevel? _activity;
   bool _saving = false;
@@ -45,7 +45,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   void initState() {
     super.initState();
     final settings = ref.read(appSettingsProvider).value;
-    _weightUnit = settings?.weightUnit ?? 'kg';
     _heightUnit = settings?.heightUnit ?? 'cm';
   }
 
@@ -55,7 +54,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     _heightFeetController.dispose();
     _heightInchesController.dispose();
     _weightController.dispose();
-    _ageController.dispose();
     super.dispose();
   }
 
@@ -86,7 +84,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     return _weightUnit == 'lb' ? Units.lbToKg(value) : value;
   }
 
-  int? _age() => int.tryParse(_ageController.text.trim());
+  int? _age() {
+    final b = _birthday;
+    if (b == null) return null;
+    return ageFromBirthday(b, DateTime.now());
+  }
 
   /// The maintenance estimate, or null while any required field is missing.
   double? get _estimate {
@@ -124,10 +126,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       case 1:
         return _weightKg() == null ? 'Enter your current weight.' : null;
       case 2:
-        final age = _age();
-        if (age == null || age <= 0 || age > 120) {
-          return 'Enter your age in years.';
-        }
+        final birthday = _birthday;
+        if (birthday == null) return 'Pick your date of birth.';
+        final age = ageFromBirthday(birthday, DateTime.now());
+        if (age < 1) return 'Your date of birth must be in the past.';
+        if (age > 120) return 'Pick a date within the last 120 years.';
         if (_sex == null) return 'Choose male or female.';
         return null;
       case 3:
@@ -195,11 +198,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final next = current.copyWith(
       heightCm: height,
       heightUnit: _heightUnit,
-      age: age,
+      birthday: _birthday,
       sex: sex,
       activityLevel: activity,
       maintenanceKcal: estimate.toDouble(),
-      weightUnit: _weightUnit,
       profileCompleted: true,
     );
     setState(() => _saving = true);
@@ -390,7 +392,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         Text('A couple more details', style: AppText.headline()),
         const SizedBox(height: 8),
         Text(
-          'Age and sex complete the calorie equation.',
+          'Birthday and sex complete the calorie equation — and we '
+          'work out your age for you.',
           style: AppText.bodyMuted(),
         ),
         const SizedBox(height: 20),
@@ -400,17 +403,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Age', style: AppText.title()),
+                Text('Date of birth', style: AppText.title()),
+                const SizedBox(height: 4),
+                Text(
+                  'Your age is derived from this, so it stays correct '
+                  'year after year.',
+                  style: AppText.bodyMuted(fontSize: 13),
+                ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _ageController,
-                  keyboardType: TextInputType.number,
-                  style: AppText.dataM(),
-                  decoration: const InputDecoration(
-                    labelText: 'Age',
-                    suffixText: 'years',
-                  ),
-                  onChanged: (_) => setState(() {}),
+                BirthdayField(
+                  value: _birthday,
+                  onChanged: (b) => setState(() => _birthday = b),
                 ),
               ],
             ),

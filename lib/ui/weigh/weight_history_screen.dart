@@ -15,7 +15,6 @@ class WeightHistoryScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final weighInsAsync = ref.watch(weighInsProvider);
-    final unit = ref.watch(appSettingsProvider).value?.weightUnit ?? 'kg';
     final weighIns = weighInsAsync.value ?? const <WeighIn>[];
 
     return Scaffold(
@@ -37,7 +36,7 @@ class WeightHistoryScreen extends ConsumerWidget {
               itemCount: weighIns.length,
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) =>
-                  _WeighInTile(weighIn: weighIns[index], unit: unit),
+                  _WeighInTile(weighIn: weighIns[index]),
             ),
     );
   }
@@ -68,10 +67,9 @@ class _EmptyHistory extends StatelessWidget {
 }
 
 class _WeighInTile extends ConsumerWidget {
-  const _WeighInTile({required this.weighIn, required this.unit});
+  const _WeighInTile({required this.weighIn});
 
   final WeighIn weighIn;
-  final String unit;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -93,16 +91,14 @@ class _WeighInTile extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        Formatters.weight(weighIn.weightKg, unit),
+                        Formatters.weight(weighIn.weightKg),
                         style: AppText.dataL(color: AppColors.plantain),
                       ),
                       const SizedBox(width: 6),
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          unit,
-                          style: AppText.label(color: AppColors.smoke),
-                        ),
+                        child: Text('kg',
+                            style: AppText.label(color: AppColors.smoke)),
                       ),
                     ],
                   ),

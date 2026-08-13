@@ -21,6 +21,8 @@ import 'package:weight_buddy/providers/providers.dart';
 import 'package:weight_buddy/theme/app_colors.dart';
 import 'package:weight_buddy/theme/app_theme.dart';
 import 'package:weight_buddy/ui/widgets/ledger_card.dart';
+import 'package:weight_buddy/ui/weigh/weigh_in_sheet.dart';
+import 'package:weight_buddy/utils/calorie_math.dart';
 import 'package:weight_buddy/utils/streaks.dart';
 
 class _TestSettingsController extends SettingsController {
@@ -101,6 +103,31 @@ class _FakeWeighInsController extends WeighInsController {
     _weighIns = _weighIns.where((e) => e.id != weighIn.id).toList();
     ref.invalidateSelf();
   }
+}
+
+/// A completed profile (168 cm / 31 y / male / lightly active) whose stored
+/// target matches the formula estimate, so the targets screen opens in auto
+/// mode.
+class _ProfiledSettingsController extends AppSettingsController {
+  @override
+  Future<AppSettingsData> build() async {
+    final now = DateTime.now();
+    return AppSettingsData(
+      profileCompleted: true,
+      heightCm: 168,
+      birthday: DateTime(now.year - 31, now.month, now.day),
+      sex: Sex.male,
+      activityLevel: ActivityLevel.light,
+      maintenanceKcal: 2434,
+    );
+  }
+}
+
+/// A single latest weigh-in of 87 kg.
+class _OneWeighInController extends WeighInsController {
+  @override
+  Future<List<WeighIn>> build() async =>
+      [WeighIn(date: DateTime.now(), weightKg: 87)];
 }
 
 /// In-memory chat thread so widget tests never touch platform plugins.
@@ -246,6 +273,228 @@ void main() {
       expect(find.text('Macros'), findsOneWidget);
     });
 
+    testWidgets('tapping a meal in the timeline opens its details',
+        (tester) async {
+      GoogleFonts.config.allowRuntimeFetching = false;
+      final logs = _FakeLogsController();
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(_TestSettingsController.new),
+          dayLogsProvider.overrideWith(() => logs),
+          appSettingsProvider.overrideWith(_TestAppSettingsController.new),
+          weighInsProvider.overrideWith(_FakeWeighInsController.new),
+          chatMessagesProvider.overrideWith(_FakeChatController.new),
+          memoriesProvider.overrideWith(_FakeMemoriesController.new),
+          exercisesProvider.overrideWith(_FakeExercisesController.new),
+          monthTotalsProvider.overrideWith(
+              (ref, month) async => const <String, LogTotals>{}),
+          streakProvider.overrideWith(
+              (ref) async => const Streaks(logging: 4, onPlan: 3)),
+        ],
+        child: const WeightBuddyApp(),
+      ));
+      await tester.pumpAndSettle();
+
+      await logs.add(LogEntry(
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        type: EntryType.meal,
+        summary: 'Jollof rice and fried chicken',
+        calories: 1350,
+        proteinG: 53.5,
+        carbsG: 158,
+        fatG: 50,
+        rawTranscript: 'jollof rice with 2 pieces of fried chicken',
+        items: const [
+          MealItem(
+            name: 'Jollof rice',
+            quantity: '1 plate',
+            calories: 900,
+            proteinG: 20,
+            carbsG: 120,
+            fatG: 30,
+          ),
+          MealItem(
+            name: 'Fried chicken',
+            quantity: '2 pieces',
+            calories: 450,
+            proteinG: 33.5,
+            carbsG: 38,
+            fatG: 20,
+          ),
+        ],
+        mealType: MealType.lunch,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('Jollof rice and fried chicken'),
+        250,
+        scrollable: find
+            .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byType(Scrollable))
+            .first,
+      );
+      await tester.tap(find.text('Jollof rice and fried chicken'));
+      await tester.pumpAndSettle();
+
+      // The sheet shows the meal context, per-item breakdown and the
+      // spoken text.
+      expect(find.text('LUNCH'), findsOneWidget);
+      expect(find.text('IN THIS MEAL'), findsOneWidget);
+      expect(find.text('Jollof rice'), findsOneWidget);
+      expect(find.text('1 plate'), findsOneWidget);
+      expect(find.text('900 kcal'), findsOneWidget);
+      expect(find.text('YOU SAID'), findsOneWidget);
+      expect(find.textContaining('jollof rice with 2 pieces'), findsOneWidget);
+    });
+
+    testWidgets('tapping an exercise in the timeline opens its details',
+        (tester) async {
+      GoogleFonts.config.allowRuntimeFetching = false;
+      final logs = _FakeLogsController();
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(_TestSettingsController.new),
+          dayLogsProvider.overrideWith(() => logs),
+          appSettingsProvider.overrideWith(_TestAppSettingsController.new),
+          weighInsProvider.overrideWith(_FakeWeighInsController.new),
+          chatMessagesProvider.overrideWith(_FakeChatController.new),
+          memoriesProvider.overrideWith(_FakeMemoriesController.new),
+          exercisesProvider.overrideWith(_FakeExercisesController.new),
+          monthTotalsProvider.overrideWith(
+              (ref, month) async => const <String, LogTotals>{}),
+          streakProvider.overrideWith(
+              (ref) async => const Streaks(logging: 4, onPlan: 3)),
+        ],
+        child: const WeightBuddyApp(),
+      ));
+      await tester.pumpAndSettle();
+
+      await logs.add(LogEntry(
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        type: EntryType.exercise,
+        summary: 'Leg day: squats, lunges and deadlifts',
+        calories: 240,
+        proteinG: 0,
+        carbsG: 0,
+        fatG: 0,
+        rawTranscript: 'ran on the treadmill for 30 minutes',
+        exerciseItems: const [
+          ExerciseItem(
+              name: 'Bodyweight squats',
+              sets: 3,
+              reps: 12,
+              durationMinutes: 6,
+              caloriesBurned: 70),
+          ExerciseItem(
+              name: 'Walking lunges',
+              sets: 3,
+              reps: 10,
+              durationMinutes: 7,
+              caloriesBurned: 80),
+          ExerciseItem(
+              name: 'Romanian deadlifts',
+              reps: 10,
+              durationMinutes: 7,
+              caloriesBurned: 90),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('Bodyweight squats + 2 more'),
+        250,
+        scrollable: find
+            .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byType(Scrollable))
+            .first,
+      );
+      // A circuit workout reads as one timeline row — first exercise plus the
+      // remaining count — with a count in the subtitle, not a row per
+      // exercise.
+      expect(find.text('3 exercises · 240 kcal burned'), findsOneWidget);
+      await tester.tap(find.text('Bodyweight squats + 2 more'));
+      await tester.pumpAndSettle();
+
+      // The sheet shows the workout context (each exercise with its own
+      // structure and burn). No "YOU SAID" quote — the parsed exercise cards
+      // already capture what was spoken.
+      expect(find.text('EXERCISE'), findsOneWidget);
+      expect(find.text('IN THIS WORKOUT'), findsOneWidget);
+      expect(find.text('Bodyweight squats'), findsOneWidget);
+      expect(find.text('3 × 12 reps'), findsOneWidget);
+      // Reps given without sets still show the count ("10 pressups" style).
+      expect(find.text('10 reps'), findsOneWidget);
+      expect(find.text('80 kcal'), findsOneWidget);
+      expect(find.text('90 kcal'), findsOneWidget);
+      expect(find.text('YOU SAID'), findsNothing);
+    });
+
+    testWidgets('a single-exercise workout shows structure as chips, not an '
+        'IN THIS WORKOUT section', (tester) async {
+      GoogleFonts.config.allowRuntimeFetching = false;
+      final logs = _FakeLogsController();
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(_TestSettingsController.new),
+          dayLogsProvider.overrideWith(() => logs),
+          appSettingsProvider.overrideWith(_TestAppSettingsController.new),
+          weighInsProvider.overrideWith(_FakeWeighInsController.new),
+          chatMessagesProvider.overrideWith(_FakeChatController.new),
+          memoriesProvider.overrideWith(_FakeMemoriesController.new),
+          exercisesProvider.overrideWith(_FakeExercisesController.new),
+          monthTotalsProvider.overrideWith(
+              (ref, month) async => const <String, LogTotals>{}),
+          streakProvider.overrideWith(
+              (ref) async => const Streaks(logging: 4, onPlan: 3)),
+        ],
+        child: const WeightBuddyApp(),
+      ));
+      await tester.pumpAndSettle();
+
+      await logs.add(LogEntry(
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        type: EntryType.exercise,
+        summary: 'ran on the treadmill for 30 minutes',
+        calories: 240,
+        proteinG: 0,
+        carbsG: 0,
+        fatG: 0,
+        rawTranscript: 'ran on the treadmill for 30 minutes',
+        exerciseItems: const [
+          ExerciseItem(
+              name: 'Treadmill run',
+              durationMinutes: 30,
+              caloriesBurned: 240),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('Treadmill run'),
+        250,
+        scrollable: find
+            .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byType(Scrollable))
+            .first,
+      );
+      await tester.tap(find.text('Treadmill run'));
+      await tester.pumpAndSettle();
+
+      // Single exercises read compactly: the headline names the exercise, the
+      // kcal line sits under it, and the structure shows as chips — no
+      // one-card "IN THIS WORKOUT" section. (The name and kcal text appear
+      // twice: once in the timeline tile, once in the sheet.)
+      expect(find.text('Treadmill run'), findsNWidgets(2));
+      expect(find.text('EXERCISE'), findsOneWidget);
+      expect(find.text('240 kcal burned'), findsNWidgets(2));
+      expect(find.text('30 min'), findsOneWidget);
+      expect(find.text('IN THIS WORKOUT'), findsNothing);
+    });
+
     testWidgets('first launch shows onboarding; the tabs stay locked until the '
         'profile is completed', (tester) async {
       // Tall viewport so the whole questionnaire — including the
@@ -328,9 +577,14 @@ void main() {
       await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
 
-      // Step 3 — age and sex.
+      // Step 3 — birthday and sex.
       expect(find.text('A couple more details'), findsOneWidget);
-      await tester.enterText(find.widgetWithText(TextField, 'Age'), '25');
+      await tester.tap(find.text('Pick a date'));
+      await tester.pumpAndSettle();
+      // Accept the picker's default (30 years ago today) — the derived age
+      // is 30, which the estimate then uses.
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Male'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Continue'));
@@ -340,7 +594,7 @@ void main() {
       expect(find.text('How active is your week?'), findsOneWidget);
       await tester.tap(find.text('Lightly active'));
       await tester.pumpAndSettle();
-      expect(find.text('2301 kcal/day'), findsOneWidget);
+      expect(find.text('2267 kcal/day'), findsOneWidget);
 
       await tester.tap(find.text('Start tracking'));
       await tester.pumpAndSettle();
@@ -348,7 +602,7 @@ void main() {
       // The shell swapped to the tabs, and the estimate is the new budget.
       expect(find.text('Today'), findsOneWidget);
       expect(find.text('Start tracking'), findsNothing);
-      expect(find.text('2,301'), findsOneWidget);
+      expect(find.text('2,267'), findsOneWidget);
 
       // Today's first weigh-in was planted for the estimate.
       expect(weighIns.items, hasLength(1));
@@ -425,7 +679,9 @@ void main() {
       // Targets & profile page.
       await tester.tap(find.text('Targets & profile'));
       await tester.pumpAndSettle();
-      expect(find.text('Maintenance calories / day'), findsOneWidget);
+      // The target is a live readout, not a manual field.
+      expect(find.text('2,200 kcal'), findsOneWidget);
+      expect(find.text('Set my own target'), findsOneWidget);
       await tester.scrollUntilVisible(
         find.text('Save changes'),
         120,
@@ -445,6 +701,51 @@ void main() {
       expect(find.text('Delete all entries'), findsOneWidget);
       // Demo seeding is a debug-only affordance (kDebugMode is true in tests).
       expect(find.text('Load demo data'), findsOneWidget);
+    });
+
+    testWidgets('changing the activity level instantly re-calculates the '
+        'daily target', (tester) async {
+      GoogleFonts.config.allowRuntimeFetching = false;
+      // Tall viewport so the whole targets page fits without scrolling.
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(_TestSettingsController.new),
+          dayLogsProvider.overrideWith(_FakeLogsController.new),
+          appSettingsProvider.overrideWith(_ProfiledSettingsController.new),
+          weighInsProvider.overrideWith(_OneWeighInController.new),
+          chatMessagesProvider.overrideWith(_FakeChatController.new),
+          memoriesProvider.overrideWith(_FakeMemoriesController.new),
+          exercisesProvider.overrideWith(_FakeExercisesController.new),
+          monthTotalsProvider.overrideWith(
+              (ref, month) async => const <String, LogTotals>{}),
+          streakProvider.overrideWith(
+              (ref) async => const Streaks(logging: 4, onPlan: 3)),
+        ],
+        child: const WeightBuddyApp(),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Settings').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Targets & profile'));
+      await tester.pumpAndSettle();
+
+      // Lightly active estimate for 87 kg / 168 cm / 31 y / male.
+      expect(find.text('2,434 kcal'), findsOneWidget);
+
+      // Flip the activity level — the displayed target must re-calculate
+      // on its own, with no extra button and no save yet. The settings form
+      // uses a compact dropdown: tap the field, then pick a new level.
+      await tester.tap(find.text('Lightly active'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mostly sitting'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('2,124 kcal'), findsOneWidget);
+      expect(find.text('2,434 kcal'), findsNothing);
     });
 
     testWidgets('saved key is masked and not revealable', (tester) async {
@@ -469,6 +770,44 @@ void main() {
       expect(find.text('Replace key'), findsOneWidget);
       expect(find.text('sk-test1234567890abcd'), findsNothing);
       expect(find.byTooltip('Show key'), findsNothing);
+    });
+
+    testWidgets('weigh-in sheet converts lb input to stored kilograms',
+        (tester) async {
+      GoogleFonts.config.allowRuntimeFetching = false;
+      final weighIns = _FakeWeighInsController();
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          weighInsProvider.overrideWith(() => weighIns),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () => showWeighInSheet(context),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // kg/lb is a per-entry input choice; readings are always stored in kg.
+      await tester.tap(find.text('lb'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, '180');
+      await tester.tap(find.text('Save weigh-in'));
+      await tester.pumpAndSettle();
+
+      // 180 lb is stored as kilograms.
+      expect(weighIns.items.single.weightKg, closeTo(81.646, 0.01));
     });
   });
 
@@ -643,12 +982,47 @@ void main() {
         expect(dips.reps, 20);
         expect(dips.durationMinutes, 0.75);
 
-        // Wipe clears all user data (snapshots included) but keeps settings.
+        // A circuit workout persists as one row with the exercises nested.
+        await db.insertLog(LogEntry(
+          timestamp: now + 2,
+          type: EntryType.exercise,
+          summary: 'Leg day: squats and lunges',
+          calories: 150,
+          proteinG: 0,
+          carbsG: 0,
+          fatG: 0,
+          rawTranscript: 'squats and lunges',
+          exerciseItems: const [
+            ExerciseItem(
+                name: 'Squats',
+                sets: 3,
+                reps: 12,
+                durationMinutes: 6,
+                caloriesBurned: 70),
+            ExerciseItem(
+                name: 'Lunges',
+                sets: 3,
+                reps: 10,
+                durationMinutes: 7,
+                caloriesBurned: 80),
+          ],
+        ), maintenanceKcal: 2350);
+        final legDay = (await db.allLogs())
+            .firstWhere((e) => e.summary == 'Leg day: squats and lunges');
+        expect(legDay.exerciseItems, hasLength(2));
+        expect(legDay.exerciseItems[0].name, 'Squats');
+        expect(legDay.exerciseItems[0].sets, 3);
+        expect(legDay.exerciseItems[1].name, 'Lunges');
+        expect(legDay.exerciseItems[1].reps, 10);
+        expect(legDay.calories, 150);
+
+        // Wipe clears all user data (snapshots and settings included),
+        // returning the app to a fresh-install state.
         await db.wipeAllData();
         expect(await db.weighIns(), isEmpty);
         expect(await db.memories(), isEmpty);
         expect(await db.exercises(), isEmpty);
-        expect(await db.getSetting('maintenance_kcal'), '2400');
+        expect(await db.getSetting('maintenance_kcal'), isNull);
         expect(await db.dayMaintenance(DateTime.now()), isNull);
 
         await db.close();

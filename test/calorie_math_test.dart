@@ -113,4 +113,23 @@ void main() {
       expect(ActivityLevel.fromName('nope'), isNull);
     });
   });
+
+  group('ageFromBirthday', () {
+    test('exact, before and after the birthday', () {
+      expect(ageFromBirthday(DateTime(2000, 6, 15), DateTime(2026, 6, 15)), 26);
+      expect(ageFromBirthday(DateTime(2000, 6, 15), DateTime(2026, 6, 14)), 25);
+      expect(ageFromBirthday(DateTime(2000, 6, 15), DateTime(2026, 6, 16)), 26);
+    });
+
+    test('across new year', () {
+      expect(ageFromBirthday(DateTime(1999, 12, 31), DateTime(2000, 1, 1)), 0);
+      expect(ageFromBirthday(DateTime(1999, 12, 31), DateTime(2000, 12, 30)), 0);
+      expect(ageFromBirthday(DateTime(1999, 12, 31), DateTime(2000, 12, 31)), 1);
+    });
+
+    test('leap-day birthday', () {
+      expect(ageFromBirthday(DateTime(2000, 2, 29), DateTime(2004, 2, 28)), 3);
+      expect(ageFromBirthday(DateTime(2000, 2, 29), DateTime(2004, 2, 29)), 4);
+    });
+  });
 }

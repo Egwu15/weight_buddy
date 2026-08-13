@@ -42,21 +42,38 @@ void main() {
     final before = await c.read(appSettingsProvider.future);
     await c.read(appSettingsProvider.notifier).save(before.copyWith(
           heightCm: 175,
-          age: 25,
+          birthday: DateTime(2000, 1, 15),
           sex: Sex.male,
           activityLevel: ActivityLevel.light,
           maintenanceKcal: 2301,
           profileCompleted: true,
+          smartTargetSync: true,
         ));
 
     final saved = await c.read(appSettingsProvider.future);
     expect(saved.profileCompleted, isTrue);
     expect(saved.heightCm, 175);
-    expect(saved.age, 25);
+    expect(saved.birthday, DateTime(2000, 1, 15));
+    // Age is derived from the birthday — 25 in 2025, but it never goes stale.
+    expect(saved.age, ageFromBirthday(DateTime(2000, 1, 15), DateTime.now()));
     expect(saved.sex, Sex.male);
     expect(saved.activityLevel, ActivityLevel.light);
     expect(saved.maintenanceKcal, 2301);
+    expect(saved.smartTargetSync, isTrue);
     expect(saved.hasProfile, isTrue);
+  });
+
+  test('legacy installs with a stored age get a birthday and keep the age',
+      () async {
+    final db = await freshDb();
+    await db.setSetting('age', '31');
+    final c = container(db);
+
+    final settings = await c.read(appSettingsProvider.future);
+    expect(settings.birthday, isNotNull);
+    // The synthesised birthday must preserve the age they typed (within a
+    // day's tolerance — the synthesis anchors to the current date).
+    expect(settings.age, inInclusiveRange(30, 32));
   });
 
   test('existing data (a log) skips onboarding', () async {

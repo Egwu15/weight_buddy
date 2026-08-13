@@ -240,7 +240,7 @@ void main() {
     expect(find.text('Does this look right?'), findsOneWidget);
   });
 
-  testWidgets('a workout with two exercises saves both as separate rows',
+  testWidgets('a workout with two exercises saves as one row with both items',
       (tester) async {
     GoogleFonts.config.allowRuntimeFetching = false;
     final logsController = _FakeLogsController();
@@ -282,18 +282,26 @@ void main() {
     await tester.tap(find.text('Parse'));
     await tester.pumpAndSettle();
 
-    // The confirm view shows every exercise, each with its own burn.
+    // The confirm view shows every exercise, each with its own burn and the
+    // reps count the speaker gave (natural speech gives reps without sets).
     expect(find.text('Knee Press-ups'), findsOneWidget);
     expect(find.text('Dips'), findsOneWidget);
+    expect(find.text('5 reps · 1 kcal burned'), findsOneWidget);
+    expect(find.text('5 reps · 2 kcal burned'), findsOneWidget);
 
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
-    // Both exercises were recorded as separate timeline rows.
-    expect(logsController.logs, hasLength(2));
-    expect(logsController.logs[0].summary, 'Knee Press-ups');
-    expect(logsController.logs[0].calories, 1);
-    expect(logsController.logs[1].summary, 'Dips');
-    expect(logsController.logs[1].calories, 2);
+    // The whole session was recorded as one timeline row with the exercises
+    // nested underneath, like a meal's items.
+    expect(logsController.logs, hasLength(1));
+    final workout = logsController.logs.single;
+    expect(workout.summary, '5 knee pressups and 5 dips');
+    expect(workout.exerciseItems, hasLength(2));
+    expect(workout.exerciseItems[0].name, 'Knee Press-ups');
+    expect(workout.exerciseItems[0].caloriesBurned, 1);
+    expect(workout.exerciseItems[1].name, 'Dips');
+    expect(workout.exerciseItems[1].caloriesBurned, 2);
+    expect(workout.calories, 3);
   });
 }

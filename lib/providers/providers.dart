@@ -11,7 +11,9 @@ import '../models/exercise_recommendation.dart';
 import '../models/log_entry.dart';
 import '../models/memory.dart';
 import '../models/weigh_in.dart';
+import '../utils/adaptive_math.dart';
 import '../utils/calorie_math.dart';
+import '../utils/formatters.dart';
 import '../utils/nudge_message.dart';
 import '../utils/periods.dart';
 import '../utils/streaks.dart';
@@ -135,23 +137,23 @@ final appSettingsProvider =
 
 class AppSettingsController extends AsyncNotifier<AppSettingsData> {
   static const kMaintenance = 'maintenance_kcal';
-  static const kWeightUnit = 'weight_unit';
   static const kHeightUnit = 'height_unit';
   static const kReminderEnabled = 'reminder_enabled';
   static const kReminderTime = 'reminder_time';
   static const kMemoryEnabled = 'memory_enabled';
   static const kHeightCm = 'height_cm';
+  static const kBirthday = 'birthday';
   static const kAge = 'age';
   static const kSex = 'sex';
   static const kActivityLevel = 'activity_level';
   static const kProfileCompleted = 'profile_completed';
+  static const kSmartTargetSync = 'smart_target_sync';
 
   @override
   Future<AppSettingsData> build() async {
     final db = await ref.watch(databaseProvider.future);
     final maintenance =
         double.tryParse(await db.getSetting(kMaintenance) ?? '') ?? 2200;
-    final unit = await db.getSetting(kWeightUnit) ?? 'kg';
     final heightUnit = await db.getSetting(kHeightUnit) ?? 'cm';
     final reminderEnabled =
         (await db.getSetting(kReminderEnabled) ?? 'false') == 'true';
@@ -162,9 +164,20 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
     final memoryEnabled =
         (await db.getSetting(kMemoryEnabled) ?? 'true') == 'true';
     final heightCm = double.tryParse(await db.getSetting(kHeightCm) ?? '');
-    final age = int.tryParse(await db.getSetting(kAge) ?? '');
+    var birthday = Formatters.parseIsoDate(await db.getSetting(kBirthday));
+    // Legacy installs stored a static age with no birthday. Synthesise one
+    // so their number is preserved and starts ticking forward on its own.
+    if (birthday == null) {
+      final legacyAge = int.tryParse(await db.getSetting(kAge) ?? '');
+      if (legacyAge != null) {
+        final now = DateTime.now();
+        birthday = DateTime(now.year - legacyAge, now.month, now.day);
+      }
+    }
     final sex = Sex.fromName(await db.getSetting(kSex));
     final activityLevel = ActivityLevel.fromName(await db.getSetting(kActivityLevel));
+    final smartTargetSync =
+        (await db.getSetting(kSmartTargetSync) ?? 'false') == 'true';
     // Existing users who already recorded anything (or set a maintenance
     // target) are treated as profile-complete, so the first-run onboarding
     // only greets genuinely new installs.
@@ -174,7 +187,6 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
             await db.getSetting(kMaintenance) != null;
     return AppSettingsData(
       maintenanceKcal: maintenance,
-      weightUnit: unit,
       heightUnit: heightUnit,
       reminderEnabled: reminderEnabled,
       reminderTime: TimeOfDay(
@@ -183,17 +195,17 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
       ),
       memoryEnabled: memoryEnabled,
       heightCm: heightCm,
-      age: age,
+      birthday: birthday,
       sex: sex,
       activityLevel: activityLevel,
       profileCompleted: profileCompleted,
+      smartTargetSync: smartTargetSync,
     );
   }
 
   Future<void> save(AppSettingsData data) async {
     final db = await ref.read(databaseProvider.future);
     await db.setSetting(kMaintenance, data.maintenanceKcal.toString());
-    await db.setSetting(kWeightUnit, data.weightUnit);
     await db.setSetting(kHeightUnit, data.heightUnit);
     await db.setSetting(kReminderEnabled, data.reminderEnabled.toString());
     await db.setSetting(
@@ -202,10 +214,15 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
     );
     await db.setSetting(kMemoryEnabled, data.memoryEnabled.toString());
     await db.setSetting(kHeightCm, data.heightCm?.toString() ?? '');
+    await db.setSetting(
+        kBirthday, data.birthday == null ? '' : Formatters.isoDate(data.birthday!));
+    // Keep the legacy age key in sync so older builds still read a sensible
+    // number from the same profile.
     await db.setSetting(kAge, data.age?.toString() ?? '');
     await db.setSetting(kSex, data.sex?.name ?? '');
     await db.setSetting(kActivityLevel, data.activityLevel?.name ?? '');
     await db.setSetting(kProfileCompleted, data.profileCompleted.toString());
+    await db.setSetting(kSmartTargetSync, data.smartTargetSync.toString());
     state = AsyncData(data);
   }
 
@@ -247,6 +264,29 @@ class WeighInsController extends AsyncNotifier<List<WeighIn>> {
     ref.invalidateSelf();
   }
 }
+
+/// Adaptive estimate of the user's true daily maintenance, read from their
+/// own weigh-in trend and food logs. Null until there is enough logging to
+/// trust it (see [AdaptiveMath]).
+final observedMaintenanceProvider = FutureProvider<double?>((ref) async {
+  final db = await ref.watch(databaseProvider.future);
+  final now = DateTime.now();
+  final start = now.subtract(const Duration(days: 60));
+  final logs = await db.logsForRange(start, now);
+  final intake = <DateTime, double>{};
+  for (final e in logs) {
+    if (e.type != EntryType.meal) continue;
+    final d = DateTime.fromMillisecondsSinceEpoch(e.timestamp).toLocal();
+    final day = DateTime(d.year, d.month, d.day);
+    intake[day] = (intake[day] ?? 0) + e.calories;
+  }
+  final weighIns = await ref.watch(weighInsProvider.future);
+  return AdaptiveMath.observedMaintenance(
+    weighIns: weighIns,
+    dailyIntakeKcal: intake,
+    now: now,
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Month calendar
