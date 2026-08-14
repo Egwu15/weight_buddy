@@ -16,7 +16,7 @@ class AppSettingsData {
     this.sex,
     this.activityLevel,
     this.profileCompleted = false,
-    this.smartTargetSync = false,
+    this.targetCustom,
   });
 
   /// The daily target used by the calendar colors and the coach: eat
@@ -50,10 +50,18 @@ class AppSettingsData {
   /// stops showing the questionnaire.
   final bool profileCompleted;
 
-  /// Opt-in: keep the daily target synced with the observed maintenance
-  /// read from the user's own weigh-ins and food logs. Off by default —
-  /// eating more must never silently raise the target.
-  final bool smartTargetSync;
+  /// Whether the daily target was hand-set in Settings → Targets (custom
+  /// mode) rather than derived from the profile and weigh-ins. Always-on
+  /// weight sync pauses for hand-set targets so a weigh-in never silently
+  /// overrides an explicit number. Null on legacy installs, where the mode
+  /// was inferred instead of stored.
+  final bool? targetCustom;
+
+  /// True when the target was hand-set in Settings → Targets. Always-on
+  /// weight sync pauses for hand-set targets so it never overrides an
+  /// explicit choice. Null on legacy installs, where the mode was inferred
+  /// rather than stored.
+  bool get isTargetCustom => targetCustom ?? false;
 
   /// Whole years old on [on] (defaults to today), or null without a
   /// birthday. Derived, never stored.
@@ -81,7 +89,7 @@ class AppSettingsData {
     Sex? sex,
     ActivityLevel? activityLevel,
     bool? profileCompleted,
-    bool? smartTargetSync,
+    bool? targetCustom,
   }) =>
       AppSettingsData(
         maintenanceKcal: maintenanceKcal ?? this.maintenanceKcal,
@@ -94,6 +102,6 @@ class AppSettingsData {
         sex: sex ?? this.sex,
         activityLevel: activityLevel ?? this.activityLevel,
         profileCompleted: profileCompleted ?? this.profileCompleted,
-        smartTargetSync: smartTargetSync ?? this.smartTargetSync,
+        targetCustom: targetCustom ?? this.targetCustom,
       );
 }

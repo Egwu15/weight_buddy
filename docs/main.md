@@ -186,16 +186,20 @@ questionnaire entirely.
 - **Manual override is opt-in:** a clearly-labelled "Set my own target"
   toggle reveals a number field (with a "your profile suggests X" comparison
   line and a one-tap "Back to automatic" reset), so a professional's
-  recommendation is still possible without confusing everyone else.
-- **Smart target from your own logging:** once there are ≥ 14 days between
-  the user's weigh-ins and ≥ 10 days of food logs, Targets & profile shows an
-  "From your logging" card — an adaptive estimate
-  (`avg daily intake + Δkg × 7,700 / days`) read from their real data.
-  It can be applied as the target, or auto-synced as new logs arrive via the
-  opt-in `smart_target_sync` flag (default off, and clamped to ±15% of the
-  formula estimate so a skipped week can never halve or double the target).
-  Logged workouts already live inside the weight trend, so they are never
-  double-counted.
+  recommendation is still possible without confusing everyone else. A
+  hand-set target pauses the weight sync — a weigh-in never silently
+  overrides an explicit number.
+- **The target follows your weight (always on):** logging a weigh-in that
+  moves the weight by ≥ 0.5 kg (daily water-weight wobble is ignored)
+  recomputes the target. Once there are ≥ 14 days between weigh-ins and ≥ 10
+  days of food logs, it uses the observed estimate
+  (`avg daily intake + Δkg × 7,700 / days`) from the "From your logging" card,
+  clamped to ±15% of the formula estimate so a skipped week can never halve or
+  double the target; with too little logging it falls back to the formula from
+  the new weight, so even a brand-new user's target reacts to their first
+  weigh-in. Logged workouts already live inside the weight trend, so they are
+  never double-counted. The weigh-in sheet reports the new number ("target
+  updated to X kcal").
 
 ## 4. Technical Specifications & API Integration
 
@@ -358,7 +362,7 @@ unknown the burn is honest zero rather than an invented number.
 - **Schema v1:** `logs`: id, timestamp, type (meal/exercise), summary, calories, protein_g, carbs_g, fat_g, raw_transcript, items (JSON array of the entry's parsed items — food items for meals, exercise items for workouts).
 - **Schema v2 (migrated via `onUpgrade`):**
   - `weigh_ins`: id, date, weight_kg, note.
-  - `app_settings`: key/value KV for non-secret config (maintenance_kcal, reminder_enabled, reminder_time, memory_enabled, smart_target_sync, plus the first-run profile: height_cm, birthday (ISO date; legacy `age` values are synthesised into a birthday on load), sex, activity_level, profile_completed).
+  - `app_settings`: key/value KV for non-secret config (maintenance_kcal, reminder_enabled, reminder_time, memory_enabled, target_custom (hand-set target pause for weight sync; legacy installs omit it and the mode is inferred), plus the first-run profile: height_cm, birthday (ISO date; legacy `age` values are synthesised into a birthday on load), sex, activity_level, profile_completed).
   - `chat_messages`: id, role, content, created_at (persisted coach thread).
   - `memories`: id, topic, content, category, source, created_at, updated_at, active — unique active index on topic for latest-wins upsert.
   - `exercise_recommendations`: id, name, description, muscle_groups (JSON), sets, reps, rest_seconds, duration_minutes, difficulty, plan_name, source_chat_id, created_at, archived.

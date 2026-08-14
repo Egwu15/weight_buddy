@@ -147,7 +147,7 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
   static const kSex = 'sex';
   static const kActivityLevel = 'activity_level';
   static const kProfileCompleted = 'profile_completed';
-  static const kSmartTargetSync = 'smart_target_sync';
+  static const kTargetCustom = 'target_custom';
 
   @override
   Future<AppSettingsData> build() async {
@@ -176,8 +176,10 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
     }
     final sex = Sex.fromName(await db.getSetting(kSex));
     final activityLevel = ActivityLevel.fromName(await db.getSetting(kActivityLevel));
-    final smartTargetSync =
-        (await db.getSetting(kSmartTargetSync) ?? 'false') == 'true';
+    // Null on legacy installs, where custom/auto was inferred, not stored.
+    final targetCustomRaw = await db.getSetting(kTargetCustom);
+    final targetCustom =
+        targetCustomRaw == null ? null : targetCustomRaw == 'true';
     // Existing users who already recorded anything (or set a maintenance
     // target) are treated as profile-complete, so the first-run onboarding
     // only greets genuinely new installs.
@@ -199,7 +201,7 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
       sex: sex,
       activityLevel: activityLevel,
       profileCompleted: profileCompleted,
-      smartTargetSync: smartTargetSync,
+      targetCustom: targetCustom,
     );
   }
 
@@ -222,7 +224,7 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
     await db.setSetting(kSex, data.sex?.name ?? '');
     await db.setSetting(kActivityLevel, data.activityLevel?.name ?? '');
     await db.setSetting(kProfileCompleted, data.profileCompleted.toString());
-    await db.setSetting(kSmartTargetSync, data.smartTargetSync.toString());
+    await db.setSetting(kTargetCustom, (data.targetCustom ?? false).toString());
     state = AsyncData(data);
   }
 
@@ -250,10 +252,14 @@ class WeighInsController extends AsyncNotifier<List<WeighIn>> {
     return db.weighIns();
   }
 
-  Future<void> add(WeighIn weighIn) async {
+  /// Adds a weigh-in. When the weight moved meaningfully, the maintenance
+  /// target follows ([syncMaintenanceFromData]) and the new target is
+  /// returned so the caller can surface it; null means it didn't change.
+  Future<double?> add(WeighIn weighIn) async {
     final db = await ref.read(databaseProvider.future);
     await db.insertWeighIn(weighIn);
     ref.invalidateSelf();
+    return syncMaintenanceFromData(ref);
   }
 
   Future<void> delete(WeighIn weighIn) async {
@@ -262,7 +268,103 @@ class WeighInsController extends AsyncNotifier<List<WeighIn>> {
     final db = await ref.read(databaseProvider.future);
     await db.deleteWeighIn(id);
     ref.invalidateSelf();
+    await syncMaintenanceFromData(ref);
   }
+}
+
+/// A weigh-in must move the weight by at least this many kilograms before the
+/// maintenance target is allowed to move — a single +0.3 kg day (or daily
+/// water-weight noise) must never churn the number.
+const kTargetSyncWeightDeltaKg = 0.5;
+
+/// Always-on weight sync: recomputes the maintenance target from the latest
+/// weigh-in and persists it when the weight moved meaningfully. There is no
+/// toggle — a hand-set (custom) target is the only thing that pauses it.
+///
+/// The new target is the observed estimate (what the body actually runs on,
+/// read from the weigh-in trend and food logs) clamped to ±15% of the
+/// Mifflin-St Jeor formula when there is enough logging to trust it; with too
+/// little data it falls back to the formula from the new weight, so even a
+/// brand-new user's target reacts to their first weigh-in.
+///
+/// Returns the new target, or null when nothing changed (weight wobble, a
+/// hand-set target, or not enough information to compute a number).
+Future<double?> syncMaintenanceFromData(Ref ref) async {
+  final db = await ref.read(databaseProvider.future);
+  final weighIns = await db.weighIns();
+  if (weighIns.isEmpty) return null;
+
+  final settings = await ref.read(appSettingsProvider.future);
+  // A hand-set target is the user's explicit number — never override it.
+  if (settings.targetCustom != null) {
+    if (settings.isTargetCustom) return null;
+  } else {
+    // Legacy installs inferred the mode instead of storing it: preserve the
+    // old heuristic, where a target that differs from the profile estimate
+    // was treated as deliberately custom.
+    final est = _formulaMaintenance(settings, weighIns.first.weightKg);
+    if (est != null && settings.maintenanceKcal.round() != est.round()) {
+      return null;
+    }
+  }
+
+  // React only to a meaningful weight move, ignoring daily water-weight noise.
+  if (weighIns.length > 1) {
+    final change = (weighIns.first.weightKg - weighIns[1].weightKg).abs();
+    if (change < kTargetSyncWeightDeltaKg) return null;
+  }
+
+  final now = DateTime.now();
+  final start = now.subtract(const Duration(days: 60));
+  final logs = await db.logsForRange(start, now);
+  final intake = <DateTime, double>{};
+  for (final e in logs) {
+    if (e.type != EntryType.meal) continue;
+    final d = DateTime.fromMillisecondsSinceEpoch(e.timestamp).toLocal();
+    final day = DateTime(d.year, d.month, d.day);
+    intake[day] = (intake[day] ?? 0) + e.calories;
+  }
+  final observed = AdaptiveMath.observedMaintenance(
+    weighIns: weighIns,
+    dailyIntakeKcal: intake,
+    now: now,
+  );
+  final formula = _formulaMaintenance(settings, weighIns.first.weightKg);
+  final double? candidate;
+  if (observed != null) {
+    candidate = formula == null
+        ? observed
+        : AdaptiveMath.clampToFormula(observed, formula);
+  } else {
+    candidate = formula;
+  }
+  if (candidate == null) return null;
+  final rounded = candidate.roundToDouble();
+  if (rounded == settings.maintenanceKcal) return null;
+
+  await ref.read(appSettingsProvider.notifier).patch(
+        (s) => s.copyWith(maintenanceKcal: rounded),
+      );
+  // Refresh the weigh-in day's snapshot so its calendar tint, streak judgment
+  // and the Today screen's LEFT all measure against the same new target
+  // (past days keep their own snapshots untouched).
+  await db.setDayMaintenance(weighIns.first.date, rounded);
+  return rounded;
+}
+
+/// Mifflin-St Jeor maintenance for the given weight and the stored profile,
+/// or null while the profile is incomplete.
+double? _formulaMaintenance(AppSettingsData settings, double weightKg) {
+  if (!settings.hasProfile) return null;
+  final age = settings.age;
+  if (age == null) return null;
+  return CalorieMath.maintenance(
+    weightKg: weightKg,
+    heightCm: settings.heightCm!,
+    age: age,
+    sex: settings.sex!,
+    activity: settings.activityLevel!,
+  );
 }
 
 /// Adaptive estimate of the user's true daily maintenance, read from their

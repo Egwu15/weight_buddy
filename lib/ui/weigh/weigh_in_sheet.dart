@@ -74,7 +74,7 @@ class _WeighInSheetState extends ConsumerState<WeighInSheet> {
       return;
     }
     final day = DateTime(_date.year, _date.month, _date.day);
-    await ref.read(weighInsProvider.notifier).add(
+    final updated = await ref.read(weighInsProvider.notifier).add(
           WeighIn(
             date: day,
             weightKg: kg,
@@ -83,7 +83,12 @@ class _WeighInSheetState extends ConsumerState<WeighInSheet> {
         );
     if (!mounted) return;
     Navigator.of(context).pop();
-    AppToast.show(context, 'Weigh-in saved');
+    AppToast.show(
+      context,
+      updated == null
+          ? 'Weigh-in saved'
+          : 'Weigh-in saved · target ${Formatters.kcal(updated)} kcal',
+    );
   }
 
   @override

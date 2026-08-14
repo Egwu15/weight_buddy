@@ -179,7 +179,8 @@ class AppDatabase {
   Future<int> insertLog(LogEntry entry, {double? maintenanceKcal}) async {
     final id = await _db.insert('logs', entry.toMap());
     if (maintenanceKcal != null) {
-      await _setDayMaintenance(entry.timestamp, maintenanceKcal);
+      final d = DateTime.fromMillisecondsSinceEpoch(entry.timestamp).toLocal();
+      await setDayMaintenance(d, maintenanceKcal);
     }
     return id;
   }
@@ -229,11 +230,12 @@ class AppDatabase {
     await _db.delete('logs', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Records the maintenance target in effect when [timestampMillis] was
-  /// logged (latest-wins per day), so the calendar and streaks can judge a
-  /// day by the target it was actually logged under.
-  Future<void> _setDayMaintenance(int timestampMillis, double kcal) async {
-    final day = DateTime.fromMillisecondsSinceEpoch(timestampMillis).toLocal();
+  /// Records the maintenance target in effect for a local [day] (latest-wins),
+  /// so the calendar and streaks judge a day by the target it was actually
+  /// logged under. Logs write this on insert; the weight sync also refreshes
+  /// the weigh-in day's snapshot when the target moves, so that day's judgment
+  /// follows the change immediately.
+  Future<void> setDayMaintenance(DateTime day, double kcal) async {
     final dayMs = DateTime(day.year, day.month, day.day).millisecondsSinceEpoch;
     await _db.insert(
       'day_maintenance',

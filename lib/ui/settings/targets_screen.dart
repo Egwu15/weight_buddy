@@ -35,7 +35,6 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
   bool _hydrated = false;
   bool _modeDecided = false;
   bool _customMode = false;
-  bool _syncFromLogs = false;
   String _targetText = '';
   String? _profileError;
   String? _targetError;
@@ -73,7 +72,6 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
     _birthday = data.birthday;
     _sex = data.sex;
     _activity = data.activityLevel;
-    _syncFromLogs = data.smartTargetSync;
   }
 
   /// Reads the height from whichever input the unit toggle is showing,
@@ -117,16 +115,6 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
   void _editProfile(List<WeighIn> weighIns, VoidCallback mutate) {
     setState(() {
       mutate();
-      if (_syncFromLogs) {
-        // Sync mode follows the observed estimate, re-clamped against the
-        // freshly-edited profile formula.
-        final obs = ref.read(observedMaintenanceProvider).value;
-        if (obs != null) {
-          _targetText = _clampedObserved(obs, weighIns).round().toString();
-          _targetController.text = _targetText;
-          return;
-        }
-      }
       if (!_customMode) {
         final est = _estimate(weighIns);
         if (est != null) {
@@ -184,28 +172,14 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
     return AdaptiveMath.clampToFormula(observed, est);
   }
 
+  /// Adopts the observed estimate as the target while staying in automatic
+  /// mode — the number becomes yours now, and it keeps following your
+  /// weigh-ins (weight moves of 0.5 kg or more) from here on.
   void _useObserved(double observed, List<WeighIn> weighIns) {
     setState(() {
-      _customMode = true;
+      _customMode = false;
       _targetText = _clampedObserved(observed, weighIns).round().toString();
       _targetController.text = _targetText;
-    });
-  }
-
-  void _onSyncChanged(bool v, List<WeighIn> weighIns, double observed) {
-    setState(() {
-      _syncFromLogs = v;
-      if (v) {
-        _customMode = false;
-        _targetText = _clampedObserved(observed, weighIns).round().toString();
-        _targetController.text = _targetText;
-      } else if (!_customMode) {
-        final est = _estimate(weighIns);
-        if (est != null) {
-          _targetText = est.round().toString();
-          _targetController.text = _targetText;
-        }
-      }
     });
   }
 
@@ -255,7 +229,7 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
             birthday: _birthday,
             sex: _sex,
             activityLevel: _activity,
-            smartTargetSync: _syncFromLogs,
+            targetCustom: _customMode,
           ),
         );
     if (!mounted) return;
@@ -272,21 +246,28 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
     final observedAsync = ref.watch(observedMaintenanceProvider);
     final observed = observedAsync.value;
 
-    // On first open, preserve an existing manual target: if the saved number
-    // differs from what the profile now estimates, start in custom mode so a
-    // deliberately-chosen value is never silently overwritten.
+    // On first open, preserve an existing hand-set target: start in custom
+    // mode when it was persisted as such. Legacy installs stored nothing, so
+    // fall back to the old heuristic — a saved number that differs from what
+    // the profile now estimates is treated as deliberately custom and is never
+    // silently overwritten.
     if (!_modeDecided && appSettingsAsync.hasValue && weighInsAsync.hasValue) {
       _modeDecided = true;
       final settings = appSettingsAsync.value!;
-      final est = _estimate(weighIns);
-      if (est != null && settings.maintenanceKcal.round() != est.round()) {
-        _customMode = true;
+      final persisted = settings.targetCustom;
+      if (persisted != null) {
+        _customMode = persisted;
+      } else {
+        final est = _estimate(weighIns);
+        if (est != null && settings.maintenanceKcal.round() != est.round()) {
+          _customMode = true;
+        }
       }
     }
 
     ref.listen(observedMaintenanceProvider, (prev, next) {
       final obs = next.value;
-      if (obs != null && _syncFromLogs && !_customMode && mounted) {
+      if (obs != null && !_customMode && mounted) {
         final latest = ref.read(weighInsProvider).value ?? const <WeighIn>[];
         setState(() {
           _targetText = _clampedObserved(obs, latest).round().toString();
@@ -359,10 +340,12 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
                 const SizedBox(height: 8),
                 Text(
                   _customMode
-                      ? 'Custom — you set this number. Switch back to automatic '
-                          'anytime to follow your profile again.'
-                      : 'Auto-calculated from your profile and latest weigh-in. '
-                          'It updates as you change your details below.',
+                      ? 'Custom — you set this number. It won\'t change with '
+                          'your weight. Switch back to automatic to follow your '
+                          'weigh-ins again.'
+                      : 'Automatic — follows your profile and latest weigh-in. '
+                          'A weigh-in that moves your weight by 0.5 kg or more '
+                          'updates the target.',
                   style: AppText.bodyMuted(fontSize: 12),
                 ),
                 if (_customMode && estimate != null)
@@ -482,8 +465,7 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
           if (observed != null) ...[
             _LoggingCard(
               observed: observed,
-              syncing: _syncFromLogs,
-              onSyncChanged: (v) => _onSyncChanged(v, weighIns, observed),
+              following: !_customMode,
               onUse: () => _useObserved(observed, weighIns),
             ),
             const SizedBox(height: 16),
@@ -500,18 +482,21 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
 }
 
 /// The smart-target card: the observed maintenance read from the user's own
-/// weigh-ins and food logs, with an apply action and an opt-in auto-sync.
+/// weigh-ins and food logs. The target follows this automatically (weight
+/// moves of 0.5 kg or more) in automatic mode; the apply action adopts the
+/// current number right away without leaving automatic mode.
 class _LoggingCard extends StatelessWidget {
   const _LoggingCard({
     required this.observed,
-    required this.syncing,
-    required this.onSyncChanged,
+    required this.following,
     required this.onUse,
   });
 
   final double observed;
-  final bool syncing;
-  final ValueChanged<bool> onSyncChanged;
+
+  /// True when the target is in automatic mode and will follow this number.
+  final bool following;
+
   final VoidCallback onUse;
 
   @override
@@ -534,9 +519,17 @@ class _LoggingCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Read from your recent weigh-ins and food logs — what your body '
-            'actually runs on. Logged workouts already show up in your weight '
-            'trend, so nothing is double-counted.',
+            following
+                ? 'Read from your recent weigh-ins and food logs — what your '
+                    'body actually runs on. Logged workouts already show up in '
+                    'your weight trend, so nothing is double-counted. Your '
+                    'target follows this number automatically whenever your '
+                    'weight moves 0.5 kg or more.'
+                : 'Read from your recent weigh-ins and food logs — what your '
+                    'body actually runs on. Logged workouts already show up in '
+                    'your weight trend, so nothing is double-counted. Switch '
+                    'back to automatic and your target will follow this number '
+                    'when your weight moves 0.5 kg or more.',
             style: AppText.bodyMuted(fontSize: 12),
           ),
           const SizedBox(height: 8),
@@ -547,16 +540,6 @@ class _LoggingCard extends StatelessWidget {
               icon: const Icon(Icons.auto_graph_rounded, size: 18),
               label: const Text('Use as my target'),
             ),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Keep it in sync as I log'),
-            subtitle: Text(
-              'Auto-updates your target as new weigh-ins and meals come in.',
-              style: AppText.bodyMuted(fontSize: 12),
-            ),
-            value: syncing,
-            onChanged: onSyncChanged,
           ),
         ],
       ),

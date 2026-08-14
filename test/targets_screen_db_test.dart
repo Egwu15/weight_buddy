@@ -77,9 +77,10 @@ void main() {
     // A manual target (1900) differs from the formula estimate (2434), so
     // the screen opens in custom mode with the saved number in the field.
     expect(find.widgetWithText(TextField, '1900'), findsOneWidget);
-    // Enough logging → the adaptive "from your logging" card is present.
+    // Enough logging → the adaptive "from your logging" card is present, with
+    // the apply action (the old opt-in sync toggle is gone — sync is always on).
     expect(find.text('FROM YOUR LOGGING'), findsOneWidget);
-    expect(find.text('Keep it in sync as I log'), findsOneWidget);
+    expect(find.text('Use as my target'), findsOneWidget);
 
     // Editing the activity level re-calculates safely and never crashes. The
     // settings form uses a compact dropdown: tap the field showing the current
@@ -118,9 +119,14 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // The compact field sits lower in the profile form — scroll it into the
-    // middle of the viewport first so the tap lands.
-    await tester.ensureVisible(find.text('Lightly active'));
+    // The profile form is long and the ListView builds lazily — scroll the
+    // activity field into view first. The point of this test is the sheet it
+    // opens, not where the field sits on the page.
+    await tester.dragUntilVisible(
+      find.text('Lightly active'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Lightly active'));
     await tester.pumpAndSettle();

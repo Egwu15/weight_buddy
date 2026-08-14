@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -93,9 +94,10 @@ class _FakeWeighInsController extends WeighInsController {
   Future<List<WeighIn>> build() async => _weighIns;
 
   @override
-  Future<void> add(WeighIn weighIn) async {
+  Future<double?> add(WeighIn weighIn) async {
     _weighIns = [..._weighIns, weighIn.copyWith(id: _weighIns.length + 1)];
     ref.invalidateSelf();
+    return null;
   }
 
   @override
@@ -1350,6 +1352,110 @@ void main() {
       // The welcome card is in view (the chips sit below the fold on a
       // short screen and are lazily skipped, which is fine).
       expect(find.text('Your coach, with your numbers'), findsOneWidget);
+    });
+  });
+
+  group('back button', () {
+    /// Records real platform calls so a test can assert the exit path without
+    /// the app actually terminating. Only `SystemNavigator.pop` is captured —
+    /// the platform channel is noisy (clipboard, sounds, etc.).
+    List<String> capturePlatformPops() {
+      final pops = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'SystemNavigator.pop') pops.add(call.method);
+        return null;
+      });
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null));
+      return pops;
+    }
+
+    testWidgets('back from another tab returns to Today instead of closing',
+        (tester) async {
+      await tester.pumpWidget(await _testApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('Targets & profile'), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      // Back on Today — the app is still alive, with its voice dock.
+      expect(find.text('Log by voice'), findsWidgets);
+      expect(find.text('Targets & profile'), findsNothing);
+    });
+
+    testWidgets('back on Today arms the exit toast; second back exits',
+        (tester) async {
+      final pops = capturePlatformPops();
+      await tester.pumpWidget(await _testApp());
+      await tester.pumpAndSettle();
+
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.text('Press back again to exit'), findsOneWidget);
+
+      // Second back inside the grace window requests a real exit.
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(pops, contains('SystemNavigator.pop'));
+
+      // Flush the toast timer so the test ends with no pending timers.
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a back after the grace window re-arms instead of exiting',
+        (tester) async {
+      final pops = capturePlatformPops();
+      await tester.pumpWidget(await _testApp());
+      await tester.pumpAndSettle();
+
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.text('Press back again to exit'), findsOneWidget);
+
+      // Let the 2s grace window lapse, then back again: still a toast, no exit.
+      await tester.pump(const Duration(seconds: 3));
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.text('Press back again to exit'), findsOneWidget);
+      expect(pops, isEmpty);
+
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a tab change resets the exit grace period', (tester) async {
+      final pops = capturePlatformPops();
+      await tester.pumpWidget(await _testApp());
+      await tester.pumpAndSettle();
+
+      // Arm the toast on Today.
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.text('Press back again to exit'), findsOneWidget);
+
+      // Switching tabs clears the arm, so the next back shows the toast again
+      // instead of exiting.
+      await tester.tap(find.text('Coach'));
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('Press back again to exit'), findsOneWidget);
+
+      // Now back on Today, a back only re-arms — still no exit.
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.text('Press back again to exit'), findsOneWidget);
+      expect(pops, isEmpty);
+
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
     });
   });
 }

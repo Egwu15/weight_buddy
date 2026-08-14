@@ -47,7 +47,7 @@ void main() {
           activityLevel: ActivityLevel.light,
           maintenanceKcal: 2301,
           profileCompleted: true,
-          smartTargetSync: true,
+          targetCustom: true,
         ));
 
     final saved = await c.read(appSettingsProvider.future);
@@ -59,7 +59,7 @@ void main() {
     expect(saved.sex, Sex.male);
     expect(saved.activityLevel, ActivityLevel.light);
     expect(saved.maintenanceKcal, 2301);
-    expect(saved.smartTargetSync, isTrue);
+    expect(saved.isTargetCustom, isTrue);
     expect(saved.hasProfile, isTrue);
   });
 
