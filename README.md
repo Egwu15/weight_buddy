@@ -42,7 +42,7 @@ in IBM Plex Mono (kitchen-scale readouts); reading text in Karla.
 ## Tech
 
 - Flutter (mobile-first; iOS, Android)
-- `flutter_riverpod` state, `sqflite` local database (schema v2 with migration),
+- `flutter_riverpod` state, `sqflite` local database (schema v4 with migration),
   `flutter_secure_storage` for the API key, `record` for capture, `http` for the
   OpenAI API, `flutter_local_notifications` + `timezone` for reminders
 - Fonts via `google_fonts` (cached locally after first load)

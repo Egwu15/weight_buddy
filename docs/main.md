@@ -207,7 +207,7 @@ questionnaire entirely.
 
 - **Framework:** Flutter — iOS and Android targets (web considered a future target)
 - **State management:** flutter_riverpod (Riverpod 3)
-- **Local persistence:** SQLite via `sqflite` (offline-first) — schema v3 with migration
+- **Local persistence:** SQLite via `sqflite` (offline-first) — schema v4 with migration
 - **Secure storage:** `flutter_secure_storage` — iOS Keychain / Android EncryptedSharedPreferences (BYOK key + vocabulary)
 - **Audio capture:** `record` (.m4a, live amplitude stream for the waveform)
 - **Notifications:** `flutter_local_notifications` + `timezone` (+ `flutter_timezone` for the local IANA zone)
@@ -309,12 +309,15 @@ All schemas are **fully strict-mode compliant** — every property is in `requir
 }
 ```
 
-Each exercise in the array is saved as its own daily-log entry, so a workout
-that mentions several exercises records them all. The single
+A workout is saved as a **single daily-log entry** — one timeline row with the
+spoken session's exercises nested underneath as items, the mirror image of a
+meal's food items ("5 knee press-ups and 5 dips" lands as one entry titled
+"Knee Press-ups + 1 more"). The single
 `activity`/`duration_minutes`/`estimated_calories_burned` fields are a legacy
 shape and mirror the first array entry; the `exercises` array is the source
 of truth for what gets logged. The `sets`/`reps`/`duration_minutes` fields
-are the burn engine's inputs and are persisted with each row.
+are the burn engine's inputs and are persisted on the log row for a
+single-exercise workout, and inside each nested exercise item otherwise.
 
 ### Exercise Burn Engine (deterministic, non-inflated)
 
@@ -353,8 +356,10 @@ walk ≈ 4.3, cycling ≈ 7.5, …).
 20 bodyweight dips @ 87 kg → `87 × 9.81 × 0.4 × 20 = 6,828 J` → **≈ 7.4 kcal**
 (inside the 6–10 kcal band; MET for a 45 s set ≈ 9.1 kcal). A single
 20-rep set must never reach 20 kcal — the engine caps every set at
-`maxKcalPerSet` as a guard against mis-parsed reps. When the weight is
-unknown the burn is honest zero rather than an invented number.
+`maxKcalPerSet` as a guard against mis-parsed reps. The engine prices burns
+only off the user's latest weigh-in; when the weight is unknown the burn is
+zero rather than an invented number — the model is told to send
+`estimated_calories_burned: null`, and the app never fabricates a figure.
 
 ### Data Storage Architecture
 
