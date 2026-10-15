@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/openai_service.dart';
+import '../../data/ai_service.dart';
 import '../../models/log_entry.dart';
 import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
@@ -130,12 +130,12 @@ class _EntryEditorSheetState extends ConsumerState<EntryEditorSheet> {
   /// parse pipeline and swaps in the result. Weight is the latest weigh-in so
   /// exercise burns stay deterministic, exactly like the record sheet.
   Future<void> _reparse() async {
-    final service = ref.read(openaiServiceProvider);
+    final service = ref.read(aiServiceProvider);
     final text = _transcriptController.text.trim();
     if (service == null) {
       setState(() {
         _reparseError =
-            'Save your OpenAI key in Settings to re-parse with AI — or fix '
+            'Connect to Weight Buddy to re-parse with AI — or fix '
             'the quantities by hand below.';
       });
       return;

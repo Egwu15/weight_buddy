@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/openai_service.dart';
+import '../../data/ai_service.dart';
 import '../../models/exercise_recommendation.dart';
 import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
@@ -54,11 +54,11 @@ class _LogExerciseSheetState extends ConsumerState<LogExerciseSheet> {
 
   Future<void> _process() async {
     setState(() => _stage = _Stage.processing);
-    final service = ref.read(openaiServiceProvider);
+    final service = ref.read(aiServiceProvider);
     if (service == null) {
       setState(() {
         _stage = _Stage.error;
-        _error = 'Save your OpenAI key in Settings to log this exercise.';
+        _error = 'Connect to Weight Buddy to log this exercise.';
       });
       return;
     }

@@ -117,7 +117,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
               '$count records in this file'
               '${exportedAt is String ? ', exported ${exportedAt.split('T').first}' : ''}. '
               'Your current entries can’t be recovered afterwards. '
-              'Your OpenAI key is not part of a backup and stays as it is.'),
+              'Your account sign-in is not part of a backup and stays as it is.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -163,7 +163,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
         title: const Text('Reset the app?'),
         content: const Text(
             'Every meal, workout, weigh-in, chat, memory and saved workout '
-            'will be removed, and your profile and OpenAI key will be cleared. '
+            'will be removed, and your profile and account sign-in will be cleared. '
             'You’ll go through onboarding again, like a brand-new install. '
             'This can’t be undone.'),
         actions: [
@@ -201,7 +201,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
 
   /// Fills the app with a realistic “busy week” so the screens can be
   /// reviewed without real logging. Wipes the current records first; the
-  /// OpenAI key and targets are kept. Debug-only affordance.
+  /// account sign-in and targets are kept. Debug-only affordance.
   Future<void> _loadDemo() async {
     if (!kDebugMode) return;
     final confirmed = await showDialog<bool>(
@@ -212,7 +212,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
         content: const Text(
             'Replaces your entries with a realistic “busy week” demo — '
             'meals, workouts, weigh-ins, a coach conversation, memories and '
-            'saved workouts. Your OpenAI key and targets are kept.'),
+            'saved workouts. Your account sign-in and targets are kept.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -266,8 +266,8 @@ class _DataScreenState extends ConsumerState<DataScreen> {
           Text(
             'Export writes everything to a file you can keep or move to '
             'another phone. Import replaces what’s in the app with a backup '
-            'file. Your OpenAI key isn’t included — re-enter it after a '
-            'restore.',
+            'file. Your account sign-in isn’t included — you’ll be signed in '
+            'automatically after a restore.',
             style: AppText.bodyMuted(),
           ),
           const SizedBox(height: 12),

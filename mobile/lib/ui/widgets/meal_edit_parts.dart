@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../data/openai_service.dart';
+import '../../data/ai_service.dart';
 import '../../models/log_entry.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';

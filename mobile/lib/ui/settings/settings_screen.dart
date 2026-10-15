@@ -3,12 +3,12 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
-import 'api_key_screen.dart';
+import 'account_screen.dart';
 import 'data_screen.dart';
 import 'reminder_screen.dart';
 import 'targets_screen.dart';
 
-/// Settings hub: a short menu that fans out to focused pages — OpenAI & voice,
+/// Settings hub: a short menu that fans out to focused pages — account & voice,
 /// targets & profile, the daily reminder, and data. Each concern gets its own
 /// screen so the top level stays scannable.
 class SettingsScreen extends StatelessWidget {
@@ -25,12 +25,12 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         children: [
-          const _SectionLabel('OPENAI & VOICE'),
+          const _SectionLabel('ACCOUNT & VOICE'),
           _SettingsTile(
-            icon: Icons.key_rounded,
-            title: 'OpenAI API key',
-            subtitle: 'Your key and the foods it should recognize',
-            onTap: () => _open(context, const ApiKeyScreen()),
+            icon: Icons.cloud_done_rounded,
+            title: 'Account & voice',
+            subtitle: 'Your plan, today\'s allowance, and food vocabulary',
+            onTap: () => _open(context, const AccountScreen()),
           ),
           const SizedBox(height: 24),
           const _SectionLabel('YOUR PLAN'),

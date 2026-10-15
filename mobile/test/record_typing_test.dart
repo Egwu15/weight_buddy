@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:weight_buddy/data/openai_service.dart';
+import 'package:weight_buddy/data/ai_service.dart';
 import 'package:weight_buddy/models/log_entry.dart';
 import 'package:weight_buddy/providers/providers.dart';
 import 'package:weight_buddy/theme/app_theme.dart';
@@ -13,8 +13,8 @@ import 'package:weight_buddy/ui/record/record_sheet.dart';
 
 /// A service that parses locally so the test never hits the network or the
 /// mic — only the second stage of the pipeline is exercised.
-class _FakeService extends OpenAIService {
-  _FakeService() : super(apiKey: 'sk-test');
+class _FakeService extends AiService {
+  _FakeService() : super(token: 'sk-test');
 
   @override
   Future<ParsedLog> parseTranscript(
@@ -52,8 +52,8 @@ class _FakeService extends OpenAIService {
 
 /// A service that blocks until [gate] completes, so the loading state can
 /// be observed mid-parse.
-class _DelayedService extends OpenAIService {
-  _DelayedService(this._gate) : super(apiKey: 'sk-test');
+class _DelayedService extends AiService {
+  _DelayedService(this._gate) : super(token: 'sk-test');
 
   final Completer<void> _gate;
 
@@ -78,8 +78,8 @@ class _DelayedService extends OpenAIService {
 
 /// A service that parses "… dips … press-ups …" locally so the multi-exercise
 /// workout flow can be tested without the network.
-class _FakeExerciseService extends OpenAIService {
-  _FakeExerciseService() : super(apiKey: 'sk-test');
+class _FakeExerciseService extends AiService {
+  _FakeExerciseService() : super(token: 'sk-test');
 
   @override
   Future<ParsedLog> parseTranscript(
@@ -125,7 +125,7 @@ void main() {
 
     await tester.pumpWidget(ProviderScope(
       overrides: [
-        openaiServiceProvider.overrideWith((ref) => _FakeService()),
+        aiServiceProvider.overrideWith((ref) => _FakeService()),
         dayLogsProvider.overrideWith(() => logsController),
       ],
       child: MaterialApp(
@@ -191,7 +191,7 @@ void main() {
 
     await tester.pumpWidget(ProviderScope(
       overrides: [
-        openaiServiceProvider.overrideWith((ref) => _DelayedService(gate)),
+        aiServiceProvider.overrideWith((ref) => _DelayedService(gate)),
         dayLogsProvider.overrideWith(() => _FakeLogsController()),
       ],
       child: MaterialApp(
@@ -247,7 +247,7 @@ void main() {
 
     await tester.pumpWidget(ProviderScope(
       overrides: [
-        openaiServiceProvider.overrideWith((ref) => _FakeExerciseService()),
+        aiServiceProvider.overrideWith((ref) => _FakeExerciseService()),
         dayLogsProvider.overrideWith(() => logsController),
       ],
       child: MaterialApp(

@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:weight_buddy/data/app_database.dart';
-import 'package:weight_buddy/data/openai_service.dart';
+import 'package:weight_buddy/data/ai_service.dart';
 import 'package:weight_buddy/models/app_settings_data.dart';
 import 'package:weight_buddy/models/log_entry.dart';
 import 'package:weight_buddy/models/weigh_in.dart';
@@ -48,7 +48,7 @@ class _FakeLogsController extends DayLogsController {
 class _TestSettingsController extends SettingsController {
   @override
   Future<AppSettings> build() async =>
-      const AppSettings(apiKey: '', vocabulary: '');
+      const AppSettings(token: '', vocabulary: '');
 }
 
 class _TestAppSettingsController extends AppSettingsController {

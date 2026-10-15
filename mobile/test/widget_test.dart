@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:weight_buddy/data/ai_service.dart';
 import 'package:weight_buddy/data/app_database.dart';
 import 'package:weight_buddy/data/coach_context.dart';
 import 'package:weight_buddy/main.dart';
@@ -29,14 +30,28 @@ import 'package:weight_buddy/utils/streaks.dart';
 class _TestSettingsController extends SettingsController {
   @override
   Future<AppSettings> build() async =>
-      const AppSettings(apiKey: '', vocabulary: '');
+      const AppSettings(token: '', vocabulary: '');
 }
 
 class _KeyedSettingsController extends SettingsController {
   @override
   Future<AppSettings> build() async => const AppSettings(
-        apiKey: 'sk-test1234567890abcd',
+        token: 'sk-test1234567890abcd',
         vocabulary: 'Jollof, Egusi',
+      );
+}
+
+/// A service that reports a fixed account view without any network.
+class _FakeAccountService extends AiService {
+  _FakeAccountService() : super(token: 'test-token');
+
+  @override
+  Future<AccountInfo> me() async => const AccountInfo(
+        tier: 'paid',
+        isActive: true,
+        limits: [
+          KindUsage(kind: 'transcribe', limit: 300, used: 12, remaining: 288),
+        ],
       );
 }
 
@@ -639,21 +654,21 @@ void main() {
       expect(value.style?.color, AppColors.jollof);
     });
 
-    testWidgets('record sheet asks for the key first and can jump to settings',
-        (tester) async {
+    testWidgets('record sheet asks for a connection first and can jump to '
+        'settings', (tester) async {
       await tester.pumpWidget(await _testApp());
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Log by voice').first);
       await tester.pumpAndSettle();
 
-      expect(find.text('Your key goes here first'), findsOneWidget);
+      expect(find.text('Connect to Weight Buddy'), findsOneWidget);
       expect(find.text('Hold to speak'), findsNothing);
 
-      // "Go to Settings" actually lands on the Settings tab.
-      await tester.tap(find.text('Go to Settings'));
+      // "Open Settings" actually lands on the Settings tab.
+      await tester.tap(find.text('Open Settings'));
       await tester.pumpAndSettle();
-      expect(find.text('OpenAI API key'), findsOneWidget);
+      expect(find.text('Account & voice'), findsOneWidget);
     });
 
     testWidgets('settings hub fans out to focused pages', (tester) async {
@@ -664,16 +679,16 @@ void main() {
       await tester.pumpAndSettle();
 
       // The hub lists every concern instead of one long grab-bag.
-      expect(find.text('OpenAI API key'), findsOneWidget);
+      expect(find.text('Account & voice'), findsOneWidget);
       expect(find.text('Targets & profile'), findsOneWidget);
       expect(find.text('Daily reminder'), findsOneWidget);
       expect(find.text('Data'), findsOneWidget);
-      expect(find.text('Your OpenAI key'), findsNothing);
+      expect(find.text('Your account'), findsNothing);
 
-      // OpenAI & voice page.
-      await tester.tap(find.text('OpenAI API key'));
+      // Account & voice page.
+      await tester.tap(find.text('Account & voice'));
       await tester.pumpAndSettle();
-      expect(find.text('Your OpenAI key'), findsOneWidget);
+      expect(find.text('Your account'), findsOneWidget);
       expect(find.text('Foods it should recognize'), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();
@@ -750,11 +765,13 @@ void main() {
       expect(find.text('2,434 kcal'), findsNothing);
     });
 
-    testWidgets('saved key is masked and not revealable', (tester) async {
+    testWidgets('account screen shows the connection and today\'s allowance',
+        (tester) async {
       GoogleFonts.config.allowRuntimeFetching = false;
       await tester.pumpWidget(ProviderScope(
         overrides: [
           settingsProvider.overrideWith(_KeyedSettingsController.new),
+          aiServiceProvider.overrideWith((ref) => _FakeAccountService()),
           dayLogsProvider.overrideWith(_FakeLogsController.new),
           appSettingsProvider.overrideWith(_TestAppSettingsController.new),
           weighInsProvider.overrideWith(_FakeWeighInsController.new),
@@ -765,13 +782,12 @@ void main() {
 
       await tester.tap(find.text('Settings').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('OpenAI API key'));
+      await tester.tap(find.text('Account & voice'));
       await tester.pumpAndSettle();
 
-      expect(find.text('sk-••••••••abcd'), findsOneWidget);
-      expect(find.text('Replace key'), findsOneWidget);
-      expect(find.text('sk-test1234567890abcd'), findsNothing);
-      expect(find.byTooltip('Show key'), findsNothing);
+      expect(find.text('Connected'), findsOneWidget);
+      expect(find.text('Premium'), findsOneWidget);
+      expect(find.text('288/300'), findsOneWidget);
     });
 
     testWidgets('weigh-in sheet converts lb input to stored kilograms',
@@ -1292,8 +1308,8 @@ void main() {
       expect(find.text('Your coach, with your numbers'), findsOneWidget);
       expect(find.text('Workouts'), findsWidgets);
       expect(find.text('Memory'), findsWidgets);
-      // No key configured -> composer prompts for it.
-      expect(find.text('Add your OpenAI key first'), findsOneWidget);
+      // Not connected -> composer prompts for a connection.
+      expect(find.text('Connect to chat with the coach'), findsOneWidget);
     });
 
     testWidgets('coach renders a persisted conversation', (tester) async {

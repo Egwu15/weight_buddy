@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
-import '../../data/openai_service.dart';
+import '../../data/ai_service.dart';
 import '../../models/log_entry.dart';
 import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
@@ -122,7 +122,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
   Future<void> _process() async {
     _typed = false;
     try {
-      final service = ref.read(openaiServiceProvider);
+      final service = ref.read(aiServiceProvider);
       final vocab = ref.read(settingsProvider).value?.vocabulary ?? '';
       _transcript = await service!.transcribe(
         audioBytes: _audioBytes!,
@@ -130,7 +130,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
         prompt: vocab,
       );
       await _parseTyped(_transcript);
-    } on OpenAIServiceException catch (e) {
+    } on AiServiceException catch (e) {
       if (!mounted) return;
       setState(() {
         _stage = _Stage.error;
@@ -149,7 +149,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
   /// Shared second stage of the pipeline: a transcript (spoken or typed) is
   /// turned into a structured meal/exercise, then shown for confirmation.
   Future<void> _parseTyped(String raw) async {
-    final service = ref.read(openaiServiceProvider);
+    final service = ref.read(aiServiceProvider);
     if (service == null) {
       setState(() => _stage = _Stage.needsKey);
       return;
@@ -174,7 +174,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
     _typed = true;
     try {
       await _parseTyped(raw);
-    } on OpenAIServiceException catch (e) {
+    } on AiServiceException catch (e) {
       if (!mounted) return;
       setState(() {
         _stage = _Stage.error;
@@ -209,7 +209,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final service = ref.watch(openaiServiceProvider);
+    final service = ref.watch(aiServiceProvider);
     final Widget body;
     if (service == null &&
         _stage != _Stage.error &&
@@ -561,7 +561,7 @@ class _ProcessingView extends StatelessWidget {
         Text('Reading your meal…', style: AppText.title()),
         const SizedBox(height: 8),
         Text(
-          'The words are on their way back from OpenAI.',
+          'The words are on their way back.',
           style: AppText.bodyMuted(fontSize: 13),
         ),
         const SizedBox(height: 40),
@@ -990,17 +990,17 @@ class _NeedsKeyView extends StatelessWidget {
             shape: BoxShape.circle,
           ),
           child: const Icon(
-            Icons.key_rounded,
+            Icons.cloud_off_rounded,
             color: AppColors.plantain,
             size: 30,
           ),
         ),
         const SizedBox(height: 20),
-        Text('Your key goes here first', style: AppText.headline()),
+        Text('Connect to Weight Buddy', style: AppText.headline()),
         const SizedBox(height: 8),
         Text(
-          'Weight Buddy works with your own OpenAI API key. '
-          'Add it in Settings and you’re ready to talk.',
+          'Logging needs a connection to the service. Check your connection, '
+          'then try again — the app signs you in automatically.',
           textAlign: TextAlign.center,
           style: AppText.bodyMuted(),
         ),
@@ -1008,7 +1008,7 @@ class _NeedsKeyView extends StatelessWidget {
         FilledButton.icon(
           onPressed: onGoToSettings,
           icon: const Icon(Icons.settings_rounded, size: 20),
-          label: const Text('Go to Settings'),
+          label: const Text('Open Settings'),
         ),
       ],
     );

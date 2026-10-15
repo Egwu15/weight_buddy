@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/app_database.dart';
 import '../../data/coach_context.dart';
-import '../../data/openai_service.dart';
+import '../../data/ai_service.dart';
 import '../../models/chat_message.dart';
 import '../../models/exercise_recommendation.dart';
 import '../../models/log_entry.dart';
@@ -68,10 +68,10 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
   Future<void> _send(String raw) async {
     final text = raw.trim();
     if (text.isEmpty || _sending) return;
-    final service = ref.read(openaiServiceProvider);
+    final service = ref.read(aiServiceProvider);
     if (service == null) {
       setState(() => _error =
-          'Save your OpenAI key in Settings first, then come back and chat.');
+          'Connect to Weight Buddy first, then come back and chat.');
       return;
     }
 
@@ -142,7 +142,7 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
   Future<void> _maybeDistill(AppDatabase db) async {
     if (_turnsSinceDistill < 4) return;
     _turnsSinceDistill = 0;
-    final service = ref.read(openaiServiceProvider);
+    final service = ref.read(aiServiceProvider);
     if (service == null) return;
     final recent = await db.chatMessages(limit: 8);
     if (recent.length < 4) return;
@@ -177,7 +177,7 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
       AppDatabase db, String userText, String reply) async {
     final haystack = '${userText.toLowerCase()} ${reply.toLowerCase()}';
     if (!_exerciseKeywords.any(haystack.contains)) return;
-    final service = ref.read(openaiServiceProvider);
+    final service = ref.read(aiServiceProvider);
     if (service == null) return;
     final extraction = await service.extractExercises(exchange: [
       ChatTurn(role: 'user', content: userText),
@@ -267,7 +267,7 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
 
     final messagesAsync = ref.watch(chatMessagesProvider);
     final messages = messagesAsync.value ?? const <ChatMessage>[];
-    final hasKey = ref.watch(openaiServiceProvider) != null;
+    final ready = ref.watch(aiServiceProvider) != null;
 
     return Scaffold(
       body: SafeArea(
@@ -312,7 +312,7 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
             Expanded(
               child: messages.isEmpty && !_sending
                   ? _WelcomeCard(
-                      hasKey: hasKey,
+                      ready: ready,
                       onOpenMemory: _openMemory,
                       onOpenWorkouts: _openWorkouts,
                     )
@@ -339,8 +339,8 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
               ),
             _Composer(
               controller: _input,
-              enabled: hasKey && !_sending,
-              hint: hasKey ? 'Ask the coach…' : 'Add your OpenAI key first',
+              enabled: ready && !_sending,
+              hint: ready ? 'Ask the coach…' : 'Connect to chat with the coach',
               onSend: () => _send(_input.text),
             ),
           ],
@@ -353,12 +353,12 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
 
 class _WelcomeCard extends StatelessWidget {
   const _WelcomeCard({
-    required this.hasKey,
+    required this.ready,
     required this.onOpenMemory,
     required this.onOpenWorkouts,
   });
 
-  final bool hasKey;
+  final bool ready;
   final VoidCallback onOpenMemory;
   final VoidCallback onOpenWorkouts;
 

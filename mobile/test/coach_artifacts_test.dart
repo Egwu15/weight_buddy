@@ -4,45 +4,41 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:weight_buddy/data/openai_service.dart';
+import 'package:weight_buddy/data/ai_service.dart';
 import 'package:weight_buddy/models/memory.dart';
+
+const _base = 'http://backend.test';
 
 void main() {
   group('coach artifacts', () {
     test('distillMemories parses create drafts with categories', () async {
       final client = MockClient((request) async {
+        expect(request.url.path, '/v1/ai/distill-memories');
+        expect(request.headers['Authorization'], 'Bearer sk-test');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['response_format'], isNotNull);
+        expect(body['exchange'], isA<List>());
         return http.Response(
           jsonEncode({
-            'choices': [
+            'memories': [
               {
-                'message': {
-                  'content': jsonEncode({
-                    'memories': [
-                      {
-                        'topic': 'training_goal',
-                        'content': 'Marathon in May',
-                        'category': 'goal',
-                        'action': 'create',
-                      },
-                      {
-                        'topic': 'breakfast',
-                        'content': 'Hates breakfast',
-                        'category': 'preference',
-                        'action': 'create',
-                      },
-                    ],
-                  }),
-                }
-              }
-            ]
+                'topic': 'training_goal',
+                'content': 'Marathon in May',
+                'category': 'goal',
+                'action': 'create',
+              },
+              {
+                'topic': 'breakfast',
+                'content': 'Hates breakfast',
+                'category': 'preference',
+                'action': 'create',
+              },
+            ],
           }),
           200,
           headers: {'content-type': 'application/json'},
         );
       });
-      final service = OpenAIService(client: client, apiKey: 'sk-test');
+      final service = AiService(client: client, baseUrl: _base, token: 'sk-test');
       final drafts = await service.distillMemories(
         exchange: const [ChatTurn(role: 'user', content: 'I hate breakfast')],
       );
@@ -55,40 +51,29 @@ void main() {
 
     test('extractExercises parses concrete recommendations', () async {
       final client = MockClient((request) async {
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        final schema = (body['response_format'] as Map)['json_schema']
-            as Map<String, dynamic>;
-        expect(schema['strict'], isTrue);
+        expect(request.url.path, '/v1/ai/extract-exercises');
         return http.Response(
           jsonEncode({
-            'choices': [
+            'has_exercise_advice': true,
+            'recommendations': [
               {
-                'message': {
-                  'content': jsonEncode({
-                    'has_exercise_advice': true,
-                    'recommendations': [
-                      {
-                        'name': 'Bodyweight Squat',
-                        'description': 'Keep heels down',
-                        'muscle_groups': ['quads', 'glutes'],
-                        'difficulty': 'beginner',
-                        'plan_name': 'Leg Day A',
-                        'sets': 3,
-                        'reps': 10,
-                        'rest_seconds': 60,
-                        'duration_minutes': null,
-                      }
-                    ],
-                  }),
-                }
+                'name': 'Bodyweight Squat',
+                'description': 'Keep heels down',
+                'muscle_groups': ['quads', 'glutes'],
+                'difficulty': 'beginner',
+                'plan_name': 'Leg Day A',
+                'sets': 3,
+                'reps': 10,
+                'rest_seconds': 60,
+                'duration_minutes': null,
               }
-            ]
+            ],
           }),
           200,
           headers: {'content-type': 'application/json'},
         );
       });
-      final service = OpenAIService(client: client, apiKey: 'sk-test');
+      final service = AiService(client: client, baseUrl: _base, token: 'sk-test');
       final result = await service.extractExercises(
         exchange:
             const [ChatTurn(role: 'user', content: 'give me leg exercises')],
@@ -106,22 +91,14 @@ void main() {
       final client = MockClient((request) async {
         return http.Response(
           jsonEncode({
-            'choices': [
-              {
-                'message': {
-                  'content': jsonEncode({
-                    'has_exercise_advice': false,
-                    'recommendations': <Object>[],
-                  }),
-                }
-              }
-            ]
+            'has_exercise_advice': false,
+            'recommendations': <Object>[],
           }),
           200,
           headers: {'content-type': 'application/json'},
         );
       });
-      final service = OpenAIService(client: client, apiKey: 'sk-test');
+      final service = AiService(client: client, baseUrl: _base, token: 'sk-test');
       final result = await service.extractExercises(
         exchange: const [ChatTurn(role: 'user', content: 'hi')],
       );

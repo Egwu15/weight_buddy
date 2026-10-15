@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/app_database.dart';
-import '../data/openai_service.dart';
+import '../data/backend_auth.dart';
+import '../data/ai_service.dart';
 import '../data/reminder_service.dart';
 import '../data/secure_settings.dart';
 import '../models/app_settings_data.dart';
@@ -23,14 +24,24 @@ final databaseProvider = FutureProvider<AppDatabase>(
   (ref) => AppDatabase.open(),
 );
 
-/// Persisted app settings (BYOK key + custom vocabulary).
+/// Persisted app settings: the anonymous backend session plus the custom
+/// vocabulary. The AI provider key lives on the backend, never here.
 class AppSettings {
-  const AppSettings({required this.apiKey, required this.vocabulary});
+  const AppSettings({
+    required this.token,
+    this.userId = '',
+    this.installId = '',
+    required this.vocabulary,
+  });
 
-  final String apiKey;
+  /// The backend session token (empty until the device has signed in).
+  final String token;
+  final String userId;
+  final String installId;
   final String vocabulary;
 
-  bool get isConfigured => apiKey.trim().isNotEmpty;
+  /// Whether the device holds a usable backend session.
+  bool get isConfigured => token.trim().isNotEmpty;
 }
 
 final settingsProvider = AsyncNotifierProvider<SettingsController, AppSettings>(
@@ -41,21 +52,58 @@ class SettingsController extends AsyncNotifier<AppSettings> {
   @override
   Future<AppSettings> build() async {
     final store = SecureSettings();
-    final key = await store.readApiKey();
-    final vocab = await store.readVocabulary();
-    return AppSettings(apiKey: key ?? '', vocabulary: vocab ?? '');
+    final vocab = await store.readVocabulary() ?? '';
+    final auth = BackendAuth(store: store);
+
+    AppSettings from(BackendSession? session) => AppSettings(
+          token: session?.token ?? '',
+          userId: session?.userId ?? '',
+          installId: session?.installId ?? '',
+          vocabulary: vocab,
+        );
+
+    // Prefer a stored session; otherwise sign in. Sign-in failures (offline on
+    // first launch) leave the device unconfigured rather than crashing, so the
+    // UI can offer a retry.
+    try {
+      final restored = await auth.restore();
+      if (restored != null) return from(restored);
+    } catch (_) {}
+    try {
+      return from(await auth.signIn());
+    } catch (_) {
+      return from(null);
+    }
   }
 
-  Future<void> save({
-    required String apiKey,
-    required String vocabulary,
-  }) async {
+  Future<void> save({required String vocabulary}) async {
     final store = SecureSettings();
-    await store.writeApiKey(apiKey.trim());
     await store.writeVocabulary(vocabulary.trim());
-    state = AsyncData(
-      AppSettings(apiKey: apiKey.trim(), vocabulary: vocabulary.trim()),
-    );
+    final current = state.value;
+    state = AsyncData(AppSettings(
+      token: current?.token ?? '',
+      userId: current?.userId ?? '',
+      installId: current?.installId ?? '',
+      vocabulary: vocabulary.trim(),
+    ));
+  }
+
+  /// Re-attempts anonymous sign-in. Used by the account screen's retry button
+  /// after an offline first launch.
+  Future<void> refreshSession() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final store = SecureSettings();
+      final vocab = await store.readVocabulary() ?? '';
+      final auth = BackendAuth(store: store);
+      final session = await auth.restore() ?? await auth.signIn();
+      return AppSettings(
+        token: session.token,
+        userId: session.userId,
+        installId: session.installId,
+        vocabulary: vocab,
+      );
+    });
   }
 }
 
@@ -139,11 +187,19 @@ final dayTotalsProvider = Provider<LogTotals>((ref) {
   return LogTotals.fromEntries(logs);
 });
 
-/// The OpenAI service, available only once the user has saved their key.
-final openaiServiceProvider = Provider<OpenAIService?>((ref) {
+/// The backend AI client, available once the device has a session.
+final aiServiceProvider = Provider<AiService?>((ref) {
   final settings = ref.watch(settingsProvider).value;
   if (settings == null || !settings.isConfigured) return null;
-  return OpenAIService(apiKey: settings.apiKey);
+  return AiService(token: settings.token);
+});
+
+/// The signed-in user's tier and remaining daily allowance, refreshed from the
+/// backend. Null while there is no session.
+final accountProvider = FutureProvider<AccountInfo?>((ref) async {
+  final service = ref.watch(aiServiceProvider);
+  if (service == null) return null;
+  return service.me();
 });
 
 // ---------------------------------------------------------------------------
