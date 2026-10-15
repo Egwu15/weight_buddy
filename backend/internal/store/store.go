@@ -100,6 +100,20 @@ LIMIT 1`
 	return u, created, nil
 }
 
+// UserByInstallID loads the account for a device, returning ErrNotFound when
+// the device has never signed in.
+func (s *Store) UserByInstallID(ctx context.Context, installID string) (User, error) {
+	const q = `SELECT id::text, install_id, created_at FROM users WHERE install_id = $1`
+	var u User
+	if err := s.pool.QueryRow(ctx, q, installID).Scan(&u.ID, &u.InstallID, &u.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return User{}, ErrNotFound
+		}
+		return User{}, fmt.Errorf("load user by install id: %w", err)
+	}
+	return u, nil
+}
+
 // UserByID loads a single account, returning ErrNotFound when it is absent.
 func (s *Store) UserByID(ctx context.Context, id string) (User, error) {
 	const q = `SELECT id::text, install_id, created_at FROM users WHERE id = $1::uuid`

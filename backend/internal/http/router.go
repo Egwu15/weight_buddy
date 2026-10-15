@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/tedif/weight-buddy-backend/internal/auth"
 )
 
 // Deps are the collaborators the HTTP layer needs. It grows as tasks add
@@ -19,6 +21,15 @@ type Deps struct {
 	// RequestTimeout bounds each request. Zero disables the deadline, which is
 	// convenient in tests; production always sets it from config.
 	RequestTimeout time.Duration
+
+	// Store is the persistence layer. Required by every non-health route.
+	Store Store
+	// Tokens issues and verifies app session tokens.
+	Tokens *auth.Tokens
+	// JWTSecret salts the hashed client IP used for the per-device cap.
+	JWTSecret string
+	// FreeAccountsPerDevice caps anonymous free accounts per device per day.
+	FreeAccountsPerDevice int
 }
 
 // NewRouter builds the application router with all routes registered.
@@ -27,6 +38,11 @@ func NewRouter(deps Deps) http.Handler {
 	r.Use(accessLog(deps.Logger))
 	r.Use(withRequestTimeout(deps.RequestTimeout))
 	r.Get("/healthz", handleHealthz)
+
+	r.Route("/v1", func(r chi.Router) {
+		r.Post("/auth/anonymous", deps.handleAnonymous)
+	})
+
 	return r
 }
 
