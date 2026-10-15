@@ -1,0 +1,6 @@
+# Caddy terminates TLS and proxies to the backend on localhost. Replace the
+# host with the real API hostname and point DNS at the VPS.
+api.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8080
+}

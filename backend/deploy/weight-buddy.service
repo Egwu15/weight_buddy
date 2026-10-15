@@ -1,0 +1,33 @@
+[Unit]
+Description=Weight Buddy backend
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=weightbuddy
+Group=weightbuddy
+WorkingDirectory=/opt/weight-buddy
+EnvironmentFile=/etc/weight-buddy/weight-buddy.env
+
+# Migrations run before the API starts, sharing the same environment, so a
+# deploy is just a binary swap.
+ExecStartPre=/opt/weight-buddy/weight-buddy-migrate up
+ExecStart=/opt/weight-buddy/weight-buddy
+
+Restart=on-failure
+RestartSec=2s
+
+# The process drains in-flight requests within SHUTDOWN_TIMEOUT on SIGTERM;
+# give systemd a little longer before it SIGKILLs.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Hardening: no privilege escalation, read-only system, private /tmp.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
