@@ -47,13 +47,25 @@ type Deps struct {
 	// Provider is the AI vendor seam. Nil disables the metered AI routes with
 	// a 503.
 	Provider ai.Provider
+
+	// RateLimitPerIPPerMinute and RateLimitPerUserPerMinute bound request
+	// rates. Zero disables the corresponding limiter.
+	RateLimitPerIPPerMinute   int
+	RateLimitPerUserPerMinute int
 }
 
 // NewRouter builds the application router with all routes registered.
 func NewRouter(deps Deps) http.Handler {
 	r := chi.NewRouter()
+	r.Use(withRequestID)
 	r.Use(accessLog(deps.Logger))
 	r.Use(withRequestTimeout(deps.RequestTimeout))
+
+	// Per-IP limiting runs before any auth so anonymous traffic is bounded too.
+	if deps.RateLimitPerIPPerMinute > 0 {
+		r.Use(deps.rateLimitByIP(newRateLimiter(deps.RateLimitPerIPPerMinute, time.Minute)))
+	}
+
 	r.Get("/healthz", handleHealthz)
 
 	r.Route("/v1", func(r chi.Router) {
@@ -62,6 +74,9 @@ func NewRouter(deps Deps) http.Handler {
 
 		r.Group(func(r chi.Router) {
 			r.Use(deps.requireAuth)
+			if deps.RateLimitPerUserPerMinute > 0 {
+				r.Use(deps.rateLimitByUser(newRateLimiter(deps.RateLimitPerUserPerMinute, time.Minute)))
+			}
 			r.Get("/me", deps.handleMe)
 
 			r.Post("/ai/transcribe", deps.handleTranscribe)

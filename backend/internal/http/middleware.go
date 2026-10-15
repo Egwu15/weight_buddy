@@ -35,6 +35,7 @@ func accessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 			logger.LogAttrs(context.Background(), slog.LevelInfo, "http request",
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
+				slog.String("request_id", requestIDFromContext(r.Context())),
 				slog.Int("status", rec.status),
 				slog.Int64("bytes", rec.bytes),
 				slog.Duration("duration", time.Since(start)),
