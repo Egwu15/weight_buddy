@@ -81,9 +81,16 @@ func (d Deps) handleParseExercise(w http.ResponseWriter, r *http.Request) {
 	d.handleParse(w, r, limits.KindParseExercise, "exercise")
 }
 
+// handleParseAuto lets the model decide whether a transcript describes a meal
+// or a workout. The app's voice flow uses this; the biased endpoints above are
+// for callers that already know.
+func (d Deps) handleParseAuto(w http.ResponseWriter, r *http.Request) {
+	d.handleParse(w, r, limits.KindParse, "")
+}
+
 // handleParse turns a transcript into a structured meal or exercise log. Both
 // endpoints share one strict schema; entryType biases which shape the model
-// fills in.
+// fills in (empty means it decides).
 func (d Deps) handleParse(w http.ResponseWriter, r *http.Request, kind limits.Kind, entryType string) {
 	user, cost, ok := d.gate(w, r, kind)
 	if !ok {
@@ -100,8 +107,10 @@ func (d Deps) handleParse(w http.ResponseWriter, r *http.Request, kind limits.Ki
 		return
 	}
 
-	system := ai.ParseSystemPrompt(time.Now()) +
-		"\nSet entry_type to \"" + entryType + "\"."
+	system := ai.ParseSystemPrompt(time.Now())
+	if entryType != "" {
+		system += "\nSet entry_type to \"" + entryType + "\"."
+	}
 
 	raw, err := d.Provider.Structured(r.Context(), ai.StructuredRequest{
 		SystemPrompt: system,

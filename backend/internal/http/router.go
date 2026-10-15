@@ -80,6 +80,7 @@ func NewRouter(deps Deps) http.Handler {
 			r.Get("/me", deps.handleMe)
 
 			r.Post("/ai/transcribe", deps.handleTranscribe)
+			r.Post("/ai/parse", deps.handleParseAuto)
 			r.Post("/ai/parse-meal", deps.handleParseMeal)
 			r.Post("/ai/parse-exercise", deps.handleParseExercise)
 			r.Post("/ai/chat", deps.handleChat)

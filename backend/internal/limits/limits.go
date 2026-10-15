@@ -13,6 +13,7 @@ type Kind string
 
 const (
 	KindTranscribe       Kind = "transcribe"
+	KindParse            Kind = "parse"
 	KindParseMeal        Kind = "parse_meal"
 	KindParseExercise    Kind = "parse_exercise"
 	KindChat             Kind = "chat"
@@ -39,6 +40,7 @@ func Default() Config {
 	return Config{
 		Free: Tier{Daily: map[Kind]int{
 			KindTranscribe:       10,
+			KindParse:            20,
 			KindParseMeal:        20,
 			KindParseExercise:    20,
 			KindChat:             20,
@@ -47,6 +49,7 @@ func Default() Config {
 		}},
 		Paid: Tier{Daily: map[Kind]int{
 			KindTranscribe:       300,
+			KindParse:            1000,
 			KindParseMeal:        1000,
 			KindParseExercise:    1000,
 			KindChat:             1000,
@@ -55,6 +58,7 @@ func Default() Config {
 		}},
 		Costs: map[Kind]float64{
 			KindTranscribe:       0.006,
+			KindParse:            0.002,
 			KindParseMeal:        0.002,
 			KindParseExercise:    0.002,
 			KindChat:             0.003,
