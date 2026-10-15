@@ -24,6 +24,10 @@ a single static binary, configured purely from environment variables, with
   an anonymous `Authorization` session on the request is linked to the same
   account, so usage and any RevenueCat purchase stay attached
 - `GET  /v1/me` -> user, entitlement, remaining limits, spend remaining
+- `DELETE /v1/me` -> 204; deletes the account, its entitlement and usage, and
+  its RevenueCat event records. Idempotent: a retry with the same token is 204
+- `GET  /delete-account` -> public page explaining in-app deletion and the
+  support-email fallback (Play requires this web link)
 - `POST /v1/webhooks/revenuecat` — `Authorization` header checked in constant
   time; idempotent on the event id
 - `POST /v1/ai/transcribe` (multipart `file`, optional `prompt`) -> `{text}`
@@ -74,6 +78,7 @@ One static binary behind Caddy on the same host as Postgres.
 
 ## Configuration
 
-Every variable is documented in `.env.example`. `DATABASE_URL`, `JWT_SECRET` and
-`GOOGLE_WEB_CLIENT_ID` are required; everything else has a default. Limits and
-per-kind costs live in `internal/limits` (a Go struct), not the database.
+Every variable is documented in `.env.example`. `DATABASE_URL`, `JWT_SECRET`,
+`GOOGLE_WEB_CLIENT_ID` and `SUPPORT_EMAIL` are required; everything else has a
+default. Limits and per-kind costs live in `internal/limits` (a Go struct), not
+the database.

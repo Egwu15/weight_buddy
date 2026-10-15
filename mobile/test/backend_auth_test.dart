@@ -82,8 +82,13 @@ void main() {
 
     expect(
       () => auth.signIn(),
-      throwsA(isA<BackendAuthException>()
-          .having((e) => e.message, 'message', 'Too many accounts.')),
+      throwsA(
+        isA<BackendAuthException>().having(
+          (e) => e.message,
+          'message',
+          'Too many accounts.',
+        ),
+      ),
     );
   });
 
@@ -130,11 +135,13 @@ void main() {
 
     expect(
       () => auth.signIn(),
-      throwsA(isA<BackendAuthException>().having(
-        (e) => e.message,
-        'message',
-        contains('Could not reach'),
-      )),
+      throwsA(
+        isA<BackendAuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('Could not reach'),
+        ),
+      ),
     );
   });
 
@@ -196,26 +203,30 @@ void main() {
 
   test('signInWithGoogle surfaces a rejected token (401)', () async {
     final auth = BackendAuth(
-      client: MockClient((_) async => http.Response(
-            jsonEncode({
-              'error': {
-                'code': 'unauthorized',
-                'message': 'We could not verify your Google sign-in. Try again.',
-              },
-            }),
-            401,
-            headers: {'content-type': 'application/json'},
-          )),
+      client: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'error': {
+              'code': 'unauthorized',
+              'message': 'We could not verify your Google sign-in. Try again.',
+            },
+          }),
+          401,
+          headers: {'content-type': 'application/json'},
+        ),
+      ),
       baseUrl: _base,
     );
 
     expect(
       () => auth.signInWithGoogle(idToken: 'bad'),
-      throwsA(isA<BackendAuthException>().having(
-        (e) => e.message,
-        'message',
-        contains('could not verify'),
-      )),
+      throwsA(
+        isA<BackendAuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('could not verify'),
+        ),
+      ),
     );
   });
 
@@ -250,6 +261,68 @@ void main() {
     // The device keeps its identity so the anonymous trial resumes in place.
     expect(await store.readInstallId(), 'install-1');
     expect(await store.readVocabulary(), 'Jollof, Egusi');
+  });
+
+  test('deleteAccount sends the session token and accepts 204', () async {
+    final token = _jwt(exp: 9999999999);
+    FlutterSecureStorage.setMockInitialValues({
+      'backend_install_id': 'install-1',
+      'backend_user_id': 'user-1',
+      'backend_token': token,
+    });
+
+    late http.Request captured;
+    final auth = BackendAuth(
+      client: MockClient((request) async {
+        captured = request;
+        return http.Response('', 204);
+      }),
+      baseUrl: _base,
+    );
+
+    await auth.deleteAccount();
+
+    expect(captured.method, 'DELETE');
+    expect(captured.url.path, '/v1/me');
+    expect(captured.headers['authorization'], 'Bearer $token');
+  });
+
+  test('deleteAccount surfaces a backend error', () async {
+    FlutterSecureStorage.setMockInitialValues({
+      'backend_token': _jwt(exp: 9999999999),
+    });
+    final auth = BackendAuth(
+      client: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'error': {'code': 'unauthorized', 'message': 'Sign in first.'},
+          }),
+          401,
+          headers: {'content-type': 'application/json'},
+        ),
+      ),
+      baseUrl: _base,
+    );
+
+    expect(
+      () => auth.deleteAccount(),
+      throwsA(
+        isA<BackendAuthException>().having(
+          (e) => e.message,
+          'message',
+          'Sign in first.',
+        ),
+      ),
+    );
+  });
+
+  test('deleteAccount fails without a stored session', () async {
+    final auth = BackendAuth(
+      client: MockClient((_) async => http.Response('', 204)),
+      baseUrl: _base,
+    );
+
+    expect(() => auth.deleteAccount(), throwsA(isA<BackendAuthException>()));
   });
 }
 

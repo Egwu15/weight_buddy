@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/ai_service.dart';
+import '../../data/backend_auth.dart';
 import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
@@ -22,6 +23,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   final _vocabController = TextEditingController();
   bool _hydrated = false;
   bool _saving = false;
+  bool _deleting = false;
 
   @override
   void dispose() {
@@ -43,6 +45,79 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     if (!mounted) return;
     setState(() => _saving = false);
     AppToast.show(context, 'Saved');
+  }
+
+  /// Confirms, then deletes the account (and, if chosen, the on-device data).
+  /// The dialog's second choice is off by default: meals and weigh-ins live
+  /// only on this device and are not part of the backend account.
+  Future<void> _deleteAccount() async {
+    final erase = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        var eraseDeviceData = false;
+        return StatefulBuilder(
+          builder: (context, setLocal) => AlertDialog(
+            backgroundColor: AppColors.bark,
+            title: const Text('Delete your account?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This permanently deletes your account, its usage history '
+                  'and any subscription record on our servers. This cannot be '
+                  'undone.',
+                ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: eraseDeviceData,
+                  onChanged: (value) =>
+                      setLocal(() => eraseDeviceData = value ?? false),
+                  title: const Text('Also erase data stored on this device'),
+                  subtitle: const Text(
+                    'Your meals, workouts and weigh-ins saved on this phone.',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(null),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.chili,
+                  foregroundColor: AppColors.pot,
+                ),
+                onPressed: () => Navigator.of(context).pop(eraseDeviceData),
+                child: const Text('Delete account'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (erase == null || !mounted) return;
+
+    setState(() => _deleting = true);
+    try {
+      await ref
+          .read(settingsProvider.notifier)
+          .deleteAccount(eraseDeviceData: erase);
+      if (!mounted) return;
+      AppToast.show(context, 'Account deleted');
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } on BackendAuthException catch (e) {
+      if (mounted) AppToast.show(context, e.message);
+    } catch (_) {
+      if (mounted) {
+        AppToast.show(context, 'Could not delete the account. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
   }
 
   @override
@@ -88,7 +163,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           const SizedBox(height: 8),
           account.when(
             data: (info) => info == null
-                ? Text('Connect to see your allowance.', style: AppText.bodyMuted())
+                ? Text(
+                    'Connect to see your allowance.',
+                    style: AppText.bodyMuted(),
+                  )
                 : _UsageCard(info: info),
             loading: () => const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
@@ -125,6 +203,24 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
             onPressed: _saving ? null : _save,
             icon: const Icon(Icons.check_rounded, size: 20),
             label: Text(_saving ? 'Saving…' : 'Save'),
+          ),
+          const SizedBox(height: 32),
+          Text('Danger zone', style: AppText.label()),
+          const SizedBox(height: 8),
+          Text(
+            'Deleting your account removes it from our servers. Your meals and '
+            'weigh-ins stay on this phone unless you also choose to erase them.',
+            style: AppText.bodyMuted(),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _deleting ? null : _deleteAccount,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.chili,
+              side: const BorderSide(color: AppColors.chili),
+            ),
+            icon: const Icon(Icons.delete_forever_rounded, size: 20),
+            label: Text(_deleting ? 'Deleting…' : 'Delete account'),
           ),
         ],
       ),

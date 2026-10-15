@@ -473,6 +473,49 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
+// DeleteUser removes every row that identifies a user, in one transaction, and
+// reports whether the account existed. Calling it again for an already-deleted
+// user is a no-op that reports false, so the endpoint is idempotent.
+//
+// usage and entitlements reference users with ON DELETE CASCADE, but they are
+// deleted explicitly so the wipe does not silently depend on the foreign-key
+// actions surviving a future migration.
+//
+// revenuecat_events is handled explicitly. The table has no user column or
+// foreign key, but each stored webhook payload names the app user id it was
+// about, so the rows for this user are matched on both the current and original
+// app user id and deleted. That leaves nothing in the table pointing at the
+// removed account; a later RevenueCat retry for the same subject is recorded
+// again and resolves to "unknown user", so idempotency is unaffected.
+func (s *Store) DeleteUser(ctx context.Context, userID string) (bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("begin delete user tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `DELETE FROM usage WHERE user_id = $1::uuid`, userID); err != nil {
+		return false, fmt.Errorf("delete usage: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM entitlements WHERE user_id = $1::uuid`, userID); err != nil {
+		return false, fmt.Errorf("delete entitlement: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM revenuecat_events
+		 WHERE payload->'event'->>'app_user_id' = $1
+		    OR payload->'event'->>'original_app_user_id' = $1`, userID); err != nil {
+		return false, fmt.Errorf("delete revenuecat events: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `DELETE FROM users WHERE id = $1::uuid`, userID)
+	if err != nil {
+		return false, fmt.Errorf("delete user: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit delete user tx: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // ApplyEntitlementEvent records a RevenueCat event and applies its entitlement
 // change in one transaction. It reports whether the event was newly applied;
 // false means it was a duplicate that was already processed. Recording and

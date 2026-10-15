@@ -36,9 +36,9 @@ class BackendAuthException implements Exception {
 /// next launch. This is the seam a future Google sign-in would plug into.
 class BackendAuth {
   BackendAuth({http.Client? client, String? baseUrl, SecureSettings? store})
-      : _client = client ?? http.Client(),
-        _baseUrl = baseUrl ?? kBackendBaseUrl,
-        _store = store ?? SecureSettings();
+    : _client = client ?? http.Client(),
+      _baseUrl = baseUrl ?? kBackendBaseUrl,
+      _store = store ?? SecureSettings();
 
   final http.Client _client;
   final String _baseUrl;
@@ -106,22 +106,13 @@ class BackendAuth {
     final headers = <String, String>{'Content-Type': 'application/json'};
     if (bearer != null) headers['Authorization'] = 'Bearer $bearer';
 
-    final http.Response response;
-    try {
-      response = await _client
-          .post(
-            Uri.parse('$_baseUrl$path'),
-            headers: headers,
-            body: jsonEncode(payload),
-          )
-          .timeout(_timeout);
-    } on TimeoutException {
-      throw const BackendAuthException(
-          'Weight Buddy took too long to respond. Try again.');
-    } catch (_) {
-      throw const BackendAuthException(
-          'Could not reach Weight Buddy. Check your connection and try again.');
-    }
+    final response = await _send(
+      () => _client.post(
+        Uri.parse('$_baseUrl$path'),
+        headers: headers,
+        body: jsonEncode(payload),
+      ),
+    );
     if (response.statusCode != 200) {
       // Includes the 401 a rejected Google token returns: the backend's error
       // message is already user-safe.
@@ -131,7 +122,43 @@ class BackendAuth {
       return jsonDecode(response.body) as Map<String, dynamic>;
     } catch (_) {
       throw const BackendAuthException(
-          'Weight Buddy returned an unexpected reply. Try again.');
+        'Weight Buddy returned an unexpected reply. Try again.',
+      );
+    }
+  }
+
+  /// Runs a request with the shared timeout and offline handling. The token is
+  /// never logged.
+  Future<http.Response> _send(Future<http.Response> Function() request) async {
+    try {
+      return await request().timeout(_timeout);
+    } on TimeoutException {
+      throw const BackendAuthException(
+        'Weight Buddy took too long to respond. Try again.',
+      );
+    } catch (_) {
+      throw const BackendAuthException(
+        'Could not reach Weight Buddy. Check your connection and try again.',
+      );
+    }
+  }
+
+  /// Deletes the account and all data the backend holds for it, using the
+  /// stored session. The endpoint answers 204; a rejected or expired session
+  /// throws so the caller can recover.
+  Future<void> deleteAccount() async {
+    final token = await _store.readToken();
+    if (token == null || token.isEmpty) {
+      throw const BackendAuthException('Sign in first.');
+    }
+    final response = await _send(
+      () => _client.delete(
+        Uri.parse('$_baseUrl/v1/me'),
+        headers: {'Authorization': 'Bearer $token'},
+      ),
+    );
+    if (response.statusCode != 204 && response.statusCode != 200) {
+      throw BackendAuthException(_errorMessage(response));
     }
   }
 
@@ -144,7 +171,8 @@ class BackendAuth {
     final userId = body['user_id'] as String?;
     if (token == null || token.isEmpty || userId == null || userId.isEmpty) {
       throw const BackendAuthException(
-          'Weight Buddy returned an unexpected reply. Try again.');
+        'Weight Buddy returned an unexpected reply. Try again.',
+      );
     }
     await _store.writeToken(token);
     await _store.writeUserId(userId);
@@ -168,11 +196,15 @@ class BackendAuth {
     if (parts.length != 3) return false;
     try {
       final normalized = base64Url.normalize(parts[1]);
-      final payload = jsonDecode(utf8.decode(base64Url.decode(normalized)))
-          as Map<String, dynamic>;
+      final payload =
+          jsonDecode(utf8.decode(base64Url.decode(normalized)))
+              as Map<String, dynamic>;
       final exp = payload['exp'];
       if (exp is! int) return false;
-      final expiry = DateTime.fromMillisecondsSinceEpoch(exp * 1000, isUtc: true);
+      final expiry = DateTime.fromMillisecondsSinceEpoch(
+        exp * 1000,
+        isUtc: true,
+      );
       return expiry.isBefore(DateTime.now().toUtc());
     } catch (_) {
       return false;
@@ -189,9 +221,10 @@ class BackendAuth {
 
   static String _randomInstallId() {
     final rnd = Random.secure();
-    return List<int>.generate(16, (_) => rnd.nextInt(256))
-        .map((b) => b.toRadixString(16).padLeft(2, '0'))
-        .join();
+    return List<int>.generate(
+      16,
+      (_) => rnd.nextInt(256),
+    ).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
   static String _errorMessage(http.Response response) {

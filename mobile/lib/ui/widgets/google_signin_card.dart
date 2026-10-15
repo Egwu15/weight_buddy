@@ -68,8 +68,11 @@ class _GoogleSignInCardState extends ConsumerState<GoogleSignInCard> {
         children: [
           Row(
             children: [
-              const Icon(Icons.account_circle_rounded,
-                  color: AppColors.plantain, size: 20),
+              const Icon(
+                Icons.account_circle_rounded,
+                color: AppColors.plantain,
+                size: 20,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(

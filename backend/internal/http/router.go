@@ -44,6 +44,10 @@ type Deps struct {
 	// payload does not name one.
 	RevenueCatEntitlementID string
 
+	// SupportEmail is shown on the public account-deletion page as the address
+	// to request deletion from.
+	SupportEmail string
+
 	// Limits enforces daily quotas and the global spend cap. Required by the
 	// metered routes.
 	Limits *limits.Enforcer
@@ -75,11 +79,24 @@ func NewRouter(deps Deps) http.Handler {
 	}
 
 	r.Get("/healthz", handleHealthz)
+	// Public account-deletion page (Google Play requires a web link alongside
+	// in-app deletion).
+	r.Get("/delete-account", deps.handleDeleteAccount)
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Post("/auth/anonymous", deps.handleAnonymous)
 		r.Post("/auth/google", deps.handleGoogle)
 		r.Post("/webhooks/revenuecat", deps.handleRevenueCatWebhook)
+
+		// Deletion verifies the session token but tolerates an already-deleted
+		// account, so a repeated call is a no-op 204 rather than a 401.
+		r.Group(func(r chi.Router) {
+			r.Use(deps.requireToken)
+			if deps.RateLimitPerUserPerMinute > 0 {
+				r.Use(deps.rateLimitByUser(newRateLimiter(deps.RateLimitPerUserPerMinute, time.Minute)))
+			}
+			r.Delete("/me", deps.handleDeleteMe)
+		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(deps.requireAuth)

@@ -54,3 +54,36 @@ func (d Deps) requireAuth(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(withUser(r.Context(), user)))
 	})
 }
+
+// requireToken authenticates a caller by session token alone and tolerates a
+// missing account. Account deletion needs this: once the account is gone its
+// still-valid token must still reach the handler so a retry is a no-op 204
+// rather than a 401. Handlers behind it must not assume a full account exists.
+func (d Deps) requireToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header := r.Header.Get("Authorization")
+		token, ok := strings.CutPrefix(header, "Bearer ")
+		if !ok || strings.TrimSpace(token) == "" {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Sign in first.")
+			return
+		}
+
+		userID, err := d.Tokens.Verify(strings.TrimSpace(token))
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Your session has expired. Sign in again.")
+			return
+		}
+
+		user, err := d.Store.UserByID(r.Context(), userID)
+		if err != nil {
+			if !errors.Is(err, store.ErrNotFound) {
+				writeError(w, http.StatusInternalServerError, "internal", "Something went wrong. Try again.")
+				return
+			}
+			// Already deleted: carry the id so the handler can settle the call.
+			user = store.User{ID: userID}
+		}
+
+		next.ServeHTTP(w, r.WithContext(withUser(r.Context(), user)))
+	})
+}

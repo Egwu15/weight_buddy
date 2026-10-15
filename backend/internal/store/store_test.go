@@ -384,8 +384,7 @@ func TestGoogleSignInSubjectOwnedByOtherUserIsNotMerged(t *testing.T) {
 	}
 }
 
-// TestGoogleSignInRaceCreatesOneUser fires many concurrent sign-ins for the same
-// new subject. The unique index must serialise them into a single account.
+// TestGoogleSignInRaceCreatesOneUser fires many concurrent sign-ins for the same// new subject. The unique index must serialise them into a single account.
 func TestGoogleSignInRaceCreatesOneUser(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
@@ -424,5 +423,65 @@ func TestGoogleSignInRaceCreatesOneUser(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("users with subject = %d, want 1", count)
+	}
+}
+
+func TestDeleteUserRemovesAllRowsAndIsIdempotent(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	user, _, err := s.GoogleSignIn(ctx, "sub-delete", "device-delete", "")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := s.UpsertEntitlement(ctx, Entitlement{
+		UserID: user.ID, Entitlement: "pro", Status: "active",
+	}); err != nil {
+		t.Fatalf("upsert entitlement: %v", err)
+	}
+	if err := s.RecordUsage(ctx, user.ID, "transcribe", 2, 0.01); err != nil {
+		t.Fatalf("record usage: %v", err)
+	}
+	event := []byte(`{"api_version":"1.0","event":{"id":"evt-del","type":"INITIAL_PURCHASE","app_user_id":"` + user.ID + `"}}`)
+	if _, err := s.RecordRevenueCatEvent(ctx, "evt-del", event); err != nil {
+		t.Fatalf("record event: %v", err)
+	}
+
+	deleted, err := s.DeleteUser(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if !deleted {
+		t.Fatal("delete should report the account existed")
+	}
+
+	if _, err := s.UserByID(ctx, user.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("user still present: %v", err)
+	}
+	if _, err := s.Entitlement(ctx, user.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("entitlement still present: %v", err)
+	}
+	units, err := s.UsageToday(ctx, user.ID, "transcribe")
+	if err != nil {
+		t.Fatalf("usage today: %v", err)
+	}
+	if units != 0 {
+		t.Fatalf("usage still present: %v", units)
+	}
+	var events int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM revenuecat_events WHERE event_id = 'evt-del'`).Scan(&events); err != nil {
+		t.Fatalf("count events: %v", err)
+	}
+	if events != 0 {
+		t.Fatalf("revenuecat event still present: %d", events)
+	}
+
+	// A second delete is a no-op, not an error.
+	deleted, err = s.DeleteUser(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("second delete: %v", err)
+	}
+	if deleted {
+		t.Fatal("second delete should report nothing was removed")
 	}
 }

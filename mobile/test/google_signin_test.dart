@@ -12,11 +12,13 @@ void main() {
     final service = GoogleSignInService(webClientId: '');
     expect(
       () => service.idToken(),
-      throwsA(isA<BackendAuthException>().having(
-        (e) => e.message,
-        'message',
-        contains('not configured'),
-      )),
+      throwsA(
+        isA<BackendAuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('not configured'),
+        ),
+      ),
     );
   });
 

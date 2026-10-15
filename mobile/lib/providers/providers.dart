@@ -73,11 +73,11 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     final auth = BackendAuth(store: store);
 
     AppSettings from(BackendSession? session) => AppSettings(
-          token: session?.token ?? '',
-          vocabulary: vocab,
-          userId: session?.userId ?? '',
-          googleLinked: session?.googleLinked ?? false,
-        );
+      token: session?.token ?? '',
+      vocabulary: vocab,
+      userId: session?.userId ?? '',
+      googleLinked: session?.googleLinked ?? false,
+    );
 
     // Prefer a stored session; otherwise sign in. Sign-in failures (offline on
     // first launch) leave the device unconfigured rather than crashing, so the
@@ -97,12 +97,14 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     final store = SecureSettings();
     await store.writeVocabulary(vocabulary.trim());
     final current = state.value;
-    state = AsyncData(AppSettings(
-      token: current?.token ?? '',
-      vocabulary: vocabulary.trim(),
-      userId: current?.userId ?? '',
-      googleLinked: current?.googleLinked ?? false,
-    ));
+    state = AsyncData(
+      AppSettings(
+        token: current?.token ?? '',
+        vocabulary: vocabulary.trim(),
+        userId: current?.userId ?? '',
+        googleLinked: current?.googleLinked ?? false,
+      ),
+    );
   }
 
   /// Forces a fresh sign-in, discarding any stored token. Used by the account
@@ -135,17 +137,20 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     final revenueCat = ref.read(revenueCatIdentityProvider);
 
     final idToken = await google.idToken();
-    final session =
-        await BackendAuth(store: store).signInWithGoogle(idToken: idToken);
+    final session = await BackendAuth(
+      store: store,
+    ).signInWithGoogle(idToken: idToken);
     // Purchases must follow our backend user id, not the previous anonymous one.
     await revenueCat.logIn(session.userId);
 
-    state = AsyncData(AppSettings(
-      token: session.token,
-      vocabulary: vocab,
-      userId: session.userId,
-      googleLinked: true,
-    ));
+    state = AsyncData(
+      AppSettings(
+        token: session.token,
+        vocabulary: vocab,
+        userId: session.userId,
+        googleLinked: true,
+      ),
+    );
   }
 
   /// Signs out of Google and returns the device to the anonymous trial. Clears
@@ -164,14 +169,55 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     state = const AsyncLoading();
     try {
       final session = await BackendAuth(store: store).signIn();
-      state = AsyncData(AppSettings(
-        token: session.token,
-        vocabulary: vocab,
-        userId: session.userId,
-        googleLinked: false,
-      ));
+      state = AsyncData(
+        AppSettings(
+          token: session.token,
+          vocabulary: vocab,
+          userId: session.userId,
+          googleLinked: false,
+        ),
+      );
     } catch (_) {
       state = AsyncData(AppSettings(token: '', vocabulary: vocab));
+    }
+  }
+
+  /// Deletes the account on the backend, then clears the local session, ends
+  /// the Google and RevenueCat sessions, and returns the device to the start
+  /// state. When [eraseDeviceData] is true the on-device database is wiped too
+  /// — the caller must have asked, since meals and weigh-ins live only here.
+  Future<void> deleteAccount({required bool eraseDeviceData}) async {
+    final store = SecureSettings();
+    await BackendAuth(store: store).deleteAccount();
+    await ref.read(googleIdentityProvider).signOut();
+    await ref.read(revenueCatIdentityProvider).logOut();
+
+    if (eraseDeviceData) {
+      final db = await ref.read(databaseProvider.future);
+      await db.wipeAllData();
+      // Best-effort: a secure-store failure must not block the deletion.
+      try {
+        await store.clear();
+      } catch (_) {}
+      await ref.read(refreshAfterDataReplacedProvider)(db: db);
+      state = const AsyncData(AppSettings(token: '', vocabulary: ''));
+      return;
+    }
+
+    // Keep the device's local data; drop the account and start fresh.
+    await store.clearSession();
+    state = const AsyncLoading();
+    try {
+      final session = await BackendAuth(store: store).signIn();
+      state = AsyncData(
+        AppSettings(
+          token: session.token,
+          userId: session.userId,
+          vocabulary: '',
+        ),
+      );
+    } catch (_) {
+      state = const AsyncData(AppSettings(token: '', vocabulary: ''));
     }
   }
 }
@@ -320,18 +366,21 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
       }
     }
     final sex = Sex.fromName(await db.getSetting(kSex));
-    final activityLevel = ActivityLevel.fromName(await db.getSetting(kActivityLevel));
+    final activityLevel = ActivityLevel.fromName(
+      await db.getSetting(kActivityLevel),
+    );
     // Null on legacy installs, where custom/auto was inferred, not stored.
     final targetCustomRaw = await db.getSetting(kTargetCustom);
-    final targetCustom =
-        targetCustomRaw == null ? null : targetCustomRaw == 'true';
+    final targetCustom = targetCustomRaw == null
+        ? null
+        : targetCustomRaw == 'true';
     // Existing users who already recorded anything (or set a maintenance
     // target) are treated as profile-complete, so the first-run onboarding
     // only greets genuinely new installs.
     final profileCompleted =
         (await db.getSetting(kProfileCompleted) ?? '') == 'true' ||
-            await db.hasAnyData() ||
-            await db.getSetting(kMaintenance) != null;
+        await db.hasAnyData() ||
+        await db.getSetting(kMaintenance) != null;
     return AppSettingsData(
       maintenanceKcal: maintenance,
       heightUnit: heightUnit,
@@ -362,7 +411,9 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
     await db.setSetting(kMemoryEnabled, data.memoryEnabled.toString());
     await db.setSetting(kHeightCm, data.heightCm?.toString() ?? '');
     await db.setSetting(
-        kBirthday, data.birthday == null ? '' : Formatters.isoDate(data.birthday!));
+      kBirthday,
+      data.birthday == null ? '' : Formatters.isoDate(data.birthday!),
+    );
     // Keep the legacy age key in sync so older builds still read a sensible
     // number from the same profile.
     await db.setSetting(kAge, data.age?.toString() ?? '');
@@ -487,9 +538,9 @@ Future<double?> syncMaintenanceFromData(Ref ref) async {
   final rounded = candidate.roundToDouble();
   if (rounded == settings.maintenanceKcal) return null;
 
-  await ref.read(appSettingsProvider.notifier).patch(
-        (s) => s.copyWith(maintenanceKcal: rounded),
-      );
+  await ref
+      .read(appSettingsProvider.notifier)
+      .patch((s) => s.copyWith(maintenanceKcal: rounded));
   // Refresh the weigh-in day's snapshot so its calendar tint, streak judgment
   // and the Today screen's LEFT all measure against the same new target
   // (past days keep their own snapshots untouched).
@@ -546,8 +597,9 @@ final observedMaintenanceProvider = FutureProvider<double?>((ref) async {
 /// log entry, or a refreshed per-day maintenance snapshot. The month/week/
 /// streak providers below watch it so they re-read the database instead of
 /// serving stale cached numbers until the app restarts.
-final ledgerRevisionProvider =
-    NotifierProvider<LedgerRevision, int>(LedgerRevision.new);
+final ledgerRevisionProvider = NotifierProvider<LedgerRevision, int>(
+  LedgerRevision.new,
+);
 
 class LedgerRevision extends Notifier<int> {
   @override
@@ -699,94 +751,106 @@ class NowController extends Notifier<DateTime> {
 /// - **Future periods**: the same forward path naturally covers the whole
 ///   range.
 final periodTotalsProvider =
-    FutureProvider.family<PeriodTotals, (DateTime, DateTime)>(
-  (ref, range) async {
-    ref.watch(ledgerRevisionProvider);
-    final (start, end) = range;
-    final today = ref.watch(nowProvider);
-    final db = await ref.watch(databaseProvider.future);
-    final first = DateTime(start.year, start.month, start.day);
-    final last = DateTime(end.year, end.month, end.day);
+    FutureProvider.family<PeriodTotals, (DateTime, DateTime)>((
+      ref,
+      range,
+    ) async {
+      ref.watch(ledgerRevisionProvider);
+      final (start, end) = range;
+      final today = ref.watch(nowProvider);
+      final db = await ref.watch(databaseProvider.future);
+      final first = DateTime(start.year, start.month, start.day);
+      final last = DateTime(end.year, end.month, end.day);
 
-    final snaps = await db.dayMaintenanceBetween(start, end);
-    final logs = await db.logsBetween(start, end);
+      final snaps = await db.dayMaintenanceBetween(start, end);
+      final logs = await db.logsBetween(start, end);
 
-    // Read the maintenance target only after the awaits above: watching an
-    // AsyncNotifierProvider before an async build has settled can deadlock
-    // Riverpod's flush (the original code ordered it this way too).
-    final current =
-        ref.watch(appSettingsProvider).value?.maintenanceKcal ?? 2200;
-    double maintenanceFor(DateTime day) =>
-        snaps[DateTime(day.year, day.month, day.day).millisecondsSinceEpoch] ??
-        current;
+      // Read the maintenance target only after the awaits above: watching an
+      // AsyncNotifierProvider before an async build has settled can deadlock
+      // Riverpod's flush (the original code ordered it this way too).
+      final current =
+          ref.watch(appSettingsProvider).value?.maintenanceKcal ?? 2200;
+      double maintenanceFor(DateTime day) =>
+          snaps[DateTime(
+            day.year,
+            day.month,
+            day.day,
+          ).millisecondsSinceEpoch] ??
+          current;
 
-    // A period entirely in the past keeps the full-period ledger.
-    if (!last.isAfter(today)) {
-      var budget = 0.0;
-      for (var day = first;
+      // A period entirely in the past keeps the full-period ledger.
+      if (!last.isAfter(today)) {
+        var budget = 0.0;
+        for (
+          var day = first;
           day.isBefore(last);
-          day = DateTime(day.year, day.month, day.day + 1)) {
-        budget += maintenanceFor(day);
+          day = DateTime(day.year, day.month, day.day + 1)
+        ) {
+          budget += maintenanceFor(day);
+        }
+        return PeriodTotals(
+          totals: LogTotals.fromEntries(logs),
+          budgetKcal: budget,
+        );
       }
-      return PeriodTotals(
-        totals: LogTotals.fromEntries(logs),
-        budgetKcal: budget,
-      );
-    }
 
-    // Ongoing / future period: the budget runs from today → period end; only
-    // overspend from tracked earlier days carries (under-eating never banks,
-    // untracked days count for nothing).
-    final forwardLogs = <LogEntry>[];
-    final earlier = <DateTime, LogTotals>{};
-    for (final e in logs) {
-      final d = DateTime.fromMillisecondsSinceEpoch(e.timestamp).toLocal();
-      final day = DateTime(d.year, d.month, d.day);
-      if (day.isBefore(today)) {
-        earlier[day] =
-            (earlier[day] ?? const LogTotals()) + LogTotals.fromEntries([e]);
-      } else {
-        forwardLogs.add(e);
+      // Ongoing / future period: the budget runs from today → period end; only
+      // overspend from tracked earlier days carries (under-eating never banks,
+      // untracked days count for nothing).
+      final forwardLogs = <LogEntry>[];
+      final earlier = <DateTime, LogTotals>{};
+      for (final e in logs) {
+        final d = DateTime.fromMillisecondsSinceEpoch(e.timestamp).toLocal();
+        final day = DateTime(d.year, d.month, d.day);
+        if (day.isBefore(today)) {
+          earlier[day] =
+              (earlier[day] ?? const LogTotals()) + LogTotals.fromEntries([e]);
+        } else {
+          forwardLogs.add(e);
+        }
       }
-    }
 
-    var budget = 0.0;
-    var overage = 0.0;
-    for (var day = first;
+      var budget = 0.0;
+      var overage = 0.0;
+      for (
+        var day = first;
         day.isBefore(last);
-        day = DateTime(day.year, day.month, day.day + 1)) {
-      if (day.isBefore(today)) {
-        final excess = (earlier[day]?.netKcal ?? 0) - maintenanceFor(day);
-        if (excess > 0) overage += excess;
-      } else {
-        budget += maintenanceFor(day);
+        day = DateTime(day.year, day.month, day.day + 1)
+      ) {
+        if (day.isBefore(today)) {
+          final excess = (earlier[day]?.netKcal ?? 0) - maintenanceFor(day);
+          if (excess > 0) overage += excess;
+        } else {
+          budget += maintenanceFor(day);
+        }
       }
-    }
 
-    return PeriodTotals(
-      totals: LogTotals.fromEntries(forwardLogs),
-      budgetKcal: budget,
-      overageKcal: overage,
-      fromToday: today.isAfter(first) && today.isBefore(last),
-    );
-  },
-);
+      return PeriodTotals(
+        totals: LogTotals.fromEntries(forwardLogs),
+        budgetKcal: budget,
+        overageKcal: overage,
+        fromToday: today.isAfter(first) && today.isBefore(last),
+      );
+    });
 
 /// The week beginning on the Monday of [monday].
-final weekTotalsProvider =
-    FutureProvider.family<PeriodTotals, DateTime>((ref, monday) {
+final weekTotalsProvider = FutureProvider.family<PeriodTotals, DateTime>((
+  ref,
+  monday,
+) {
   final start = startOfWeek(monday);
   final end = start.add(const Duration(days: 7));
   return ref.watch(periodTotalsProvider((start, end)).future);
 });
 
 /// The month containing [month].
-final monthPeriodTotalsProvider =
-    FutureProvider.family<PeriodTotals, DateTime>((ref, month) {
-  final start = startOfMonth(month);
-  final end = DateTime(start.year, start.month + 1, 1);
-  return ref.watch(periodTotalsProvider((start, end)).future);
-});
+final monthPeriodTotalsProvider = FutureProvider.family<PeriodTotals, DateTime>(
+  (ref, month) {
+    final start = startOfMonth(month);
+    final end = DateTime(start.year, start.month + 1, 1);
+    return ref.watch(periodTotalsProvider((start, end)).future);
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Coach: chat thread, memories, exercise library

@@ -15,6 +15,8 @@ type Store interface {
 	CreateUserIfAllowed(ctx context.Context, installID, ipHash string, cap int) (store.User, bool, bool, error)
 	GoogleSignIn(ctx context.Context, sub, installID, linkUserID string) (store.User, bool, error)
 
+	DeleteUser(ctx context.Context, userID string) (bool, error)
+
 	Entitlement(ctx context.Context, userID string) (store.Entitlement, error)
 	RecordRevenueCatEvent(ctx context.Context, eventID string, payload []byte) (bool, error)
 	ApplyEntitlementEvent(ctx context.Context, eventID string, payload []byte, e store.Entitlement) (bool, error)

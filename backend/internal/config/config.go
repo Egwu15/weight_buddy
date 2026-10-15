@@ -86,6 +86,10 @@ type Config struct {
 	// GoogleWebClientID is the OAuth Web client id that Google ID tokens must
 	// be minted for. Required: it is the audience the backend verifies.
 	GoogleWebClientID string
+
+	// SupportEmail is shown on the public account-deletion page as the address
+	// users without the app can request deletion from. Required.
+	SupportEmail string
 }
 
 // IsProduction reports whether the service is running in production mode.
@@ -205,6 +209,11 @@ func load(lookup envLookup) (Config, error) {
 	cfg.GoogleWebClientID = strings.TrimSpace(getEnv(lookup, "GOOGLE_WEB_CLIENT_ID", ""))
 	if cfg.GoogleWebClientID == "" {
 		errs = append(errs, errors.New("GOOGLE_WEB_CLIENT_ID is required"))
+	}
+
+	cfg.SupportEmail = strings.TrimSpace(getEnv(lookup, "SUPPORT_EMAIL", ""))
+	if cfg.SupportEmail == "" {
+		errs = append(errs, errors.New("SUPPORT_EMAIL is required"))
 	}
 
 	if len(errs) > 0 {

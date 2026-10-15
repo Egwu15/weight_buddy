@@ -82,6 +82,7 @@ func run() error {
 		FreeAccountsPerDevice:     cfg.FreeAccountsPerDevice,
 		RevenueCatWebhookSecret:   cfg.RevenueCatWebhookSecret,
 		RevenueCatEntitlementID:   cfg.RevenueCatEntitlementID,
+		SupportEmail:              cfg.SupportEmail,
 		Limits:                    enforcer,
 		Provider:                  provider,
 		RateLimitPerIPPerMinute:   cfg.RateLimitPerIPPerMinute,

@@ -133,6 +133,29 @@ func (f *fakeStore) userByID(id string) (store.User, bool) {
 	return store.User{}, false
 }
 
+func (f *fakeStore) DeleteUser(_ context.Context, userID string) (bool, error) {
+	deleted := false
+	for key, u := range f.users {
+		if u.ID == userID {
+			delete(f.users, key)
+			deleted = true
+		}
+	}
+	delete(f.entitlements, userID)
+	prefix := userID + "|"
+	for key := range f.usage {
+		if strings.HasPrefix(key, prefix) {
+			delete(f.usage, key)
+		}
+	}
+	for sub, id := range f.googleSubs {
+		if id == userID {
+			delete(f.googleSubs, sub)
+		}
+	}
+	return deleted, nil
+}
+
 func (f *fakeStore) Entitlement(_ context.Context, userID string) (store.Entitlement, error) {
 	if e, ok := f.entitlements[userID]; ok {
 		return e, nil

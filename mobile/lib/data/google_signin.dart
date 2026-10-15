@@ -26,7 +26,7 @@ abstract class GoogleIdTokenProvider {
 /// for our backend (which verifies the same id).
 class GoogleSignInService implements GoogleIdTokenProvider {
   GoogleSignInService({String? webClientId})
-      : _webClientId = (webClientId ?? kGoogleWebClientId).trim();
+    : _webClientId = (webClientId ?? kGoogleWebClientId).trim();
 
   final String _webClientId;
   bool _initialized = false;
@@ -37,7 +37,8 @@ class GoogleSignInService implements GoogleIdTokenProvider {
     if (_initialized) return;
     if (_webClientId.isEmpty) {
       throw const BackendAuthException(
-          'Google sign-in is not configured for this build.');
+        'Google sign-in is not configured for this build.',
+      );
     }
     await GoogleSignIn.instance.initialize(serverClientId: _webClientId);
     _initialized = true;
@@ -49,7 +50,8 @@ class GoogleSignInService implements GoogleIdTokenProvider {
     final signIn = GoogleSignIn.instance;
     if (!signIn.supportsAuthenticate()) {
       throw const BackendAuthException(
-          'Google sign-in is not available on this device.');
+        'Google sign-in is not available on this device.',
+      );
     }
 
     final GoogleSignInAccount account;
@@ -62,13 +64,15 @@ class GoogleSignInService implements GoogleIdTokenProvider {
       throw BackendAuthException(_messageFor(e));
     } catch (_) {
       throw const BackendAuthException(
-          'Could not reach Google. Check your connection and try again.');
+        'Could not reach Google. Check your connection and try again.',
+      );
     }
 
     final token = account.authentication.idToken;
     if (token == null || token.isEmpty) {
       throw const BackendAuthException(
-          'Google did not return a sign-in token. Try again.');
+        'Google did not return a sign-in token. Try again.',
+      );
     }
     return token;
   }
