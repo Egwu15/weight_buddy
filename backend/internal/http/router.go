@@ -30,6 +30,13 @@ type Deps struct {
 	JWTSecret string
 	// FreeAccountsPerDevice caps anonymous free accounts per device per day.
 	FreeAccountsPerDevice int
+
+	// RevenueCatWebhookSecret authenticates webhook deliveries; empty disables
+	// the webhook route with a 503.
+	RevenueCatWebhookSecret string
+	// RevenueCatEntitlementID is the entitlement a purchase grants when the
+	// payload does not name one.
+	RevenueCatEntitlementID string
 }
 
 // NewRouter builds the application router with all routes registered.
@@ -41,6 +48,7 @@ func NewRouter(deps Deps) http.Handler {
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Post("/auth/anonymous", deps.handleAnonymous)
+		r.Post("/webhooks/revenuecat", deps.handleRevenueCatWebhook)
 	})
 
 	return r

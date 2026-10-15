@@ -1,0 +1,27 @@
+{
+  "event": {
+    "event_timestamp_ms": 1767225600000,
+    "product_id": "com.weightbuddy.pro.monthly",
+    "period_type": "NORMAL",
+    "purchased_at_ms": 1759622400000,
+    "expiration_at_ms": 1767225600000,
+    "grace_period_expiration_at_ms": 4070908800000,
+    "environment": "PRODUCTION",
+    "entitlement_id": "pro",
+    "entitlement_ids": ["pro"],
+    "transaction_id": "100000000000002",
+    "original_transaction_id": "100000000000000",
+    "is_family_share": false,
+    "country_code": "US",
+    "app_user_id": "11111111-1111-1111-1111-111111111111",
+    "aliases": ["$RCAnonymousID:12345678-1234-1234-1234-123456789123"],
+    "original_app_user_id": "11111111-1111-1111-1111-111111111111",
+    "currency": "USD",
+    "price": 0,
+    "store": "APP_STORE",
+    "type": "BILLING_ISSUE",
+    "id": "event-billing-issue-0004",
+    "app_id": "1234567890"
+  },
+  "api_version": "1.0"
+}
