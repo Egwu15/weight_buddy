@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 // just enough behaviour to exercise the HTTP layer without a database.
 type fakeStore struct {
 	users         map[string]store.User // install id -> user
+	googleSubs    map[string]string     // google sub -> user id
 	signups       map[string]int        // ip hash -> count
 	entitlements  map[string]store.Entitlement
 	events        map[string]bool
@@ -24,6 +26,7 @@ type fakeStore struct {
 func newFakeStore() *fakeStore {
 	return &fakeStore{
 		users:        map[string]store.User{},
+		googleSubs:   map[string]string{},
 		signups:      map[string]int{},
 		entitlements: map[string]store.Entitlement{},
 		events:       map[string]bool{},
@@ -78,6 +81,56 @@ func (f *fakeStore) CreateUserIfAllowed(_ context.Context, installID, ipHash str
 	u := store.User{ID: "user-" + installID, InstallID: installID, CreatedAt: time.Now()}
 	f.users[installID] = u
 	return u, true, true, nil
+}
+
+// GoogleSignIn mirrors the store's precedence: returning subject, then link,
+// then create. It is deterministic (handler tests do not need concurrency); the
+// real atomicity is exercised against Postgres in the store package.
+func (f *fakeStore) GoogleSignIn(_ context.Context, sub, installID, linkUserID string) (store.User, bool, error) {
+	if f.createErr != nil {
+		return store.User{}, false, f.createErr
+	}
+	if id, ok := f.googleSubs[sub]; ok {
+		if u, found := f.userByID(id); found {
+			return u, false, nil
+		}
+	}
+	if linkUserID != "" {
+		for key, u := range f.users {
+			if u.ID == linkUserID && u.GoogleSub == nil {
+				linked := sub
+				u.GoogleSub = &linked
+				f.users[key] = u
+				f.googleSubs[sub] = u.ID
+				return u, true, nil
+			}
+		}
+	}
+	if existing, ok := f.users[installID]; ok {
+		if existing.GoogleSub != nil {
+			return store.User{}, false, fmt.Errorf("google sign-in conflict")
+		}
+		linked := sub
+		existing.GoogleSub = &linked
+		f.users[installID] = existing
+		f.googleSubs[sub] = existing.ID
+		return existing, true, nil
+	}
+	f.nextIDCounter++
+	linked := sub
+	u := store.User{ID: "user-" + installID, InstallID: installID, GoogleSub: &linked, CreatedAt: time.Now()}
+	f.users[installID] = u
+	f.googleSubs[sub] = u.ID
+	return u, false, nil
+}
+
+func (f *fakeStore) userByID(id string) (store.User, bool) {
+	for _, u := range f.users {
+		if u.ID == id {
+			return u, true
+		}
+	}
+	return store.User{}, false
 }
 
 func (f *fakeStore) Entitlement(_ context.Context, userID string) (store.Entitlement, error) {

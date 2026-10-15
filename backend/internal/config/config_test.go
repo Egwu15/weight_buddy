@@ -19,8 +19,9 @@ func mapLookup(env map[string]string) envLookup {
 // withRequired layers the env vars every valid config needs on top of a case.
 func withRequired(env map[string]string) map[string]string {
 	out := map[string]string{
-		"DATABASE_URL": "postgres://user@localhost:5432/db",
-		"JWT_SECRET":   "test-secret",
+		"DATABASE_URL":         "postgres://user@localhost:5432/db",
+		"JWT_SECRET":           "test-secret",
+		"GOOGLE_WEB_CLIENT_ID": "test-client.apps.googleusercontent.com",
 	}
 	for k, v := range env {
 		out[k] = v
@@ -56,6 +57,7 @@ func TestLoad(t *testing.T) {
 				TranscribeModel:           "gpt-transcribe",
 				AITimeout:                 90 * time.Second,
 				RevenueCatEntitlementID:   "pro",
+				GoogleWebClientID:         "test-client.apps.googleusercontent.com",
 				TrustedProxies:            defaultTrustedProxies(),
 			},
 		},
@@ -101,6 +103,7 @@ func TestLoad(t *testing.T) {
 				AITimeout:                 45 * time.Second,
 				RevenueCatWebhookSecret:   "whsec",
 				RevenueCatEntitlementID:   "premium",
+				GoogleWebClientID:         "test-client.apps.googleusercontent.com",
 				TrustedProxies: []netip.Prefix{
 					netip.MustParsePrefix("10.0.0.0/8"),
 					netip.MustParsePrefix("192.168.1.5/32"),
@@ -128,6 +131,7 @@ func TestLoad(t *testing.T) {
 				TranscribeModel:           "gpt-transcribe",
 				AITimeout:                 90 * time.Second,
 				RevenueCatEntitlementID:   "pro",
+				GoogleWebClientID:         "test-client.apps.googleusercontent.com",
 				TrustedProxies:            defaultTrustedProxies(),
 			},
 		},
@@ -145,6 +149,11 @@ func TestLoad(t *testing.T) {
 			name:    "missing jwt secret",
 			env:     map[string]string{"DATABASE_URL": "postgres://x"},
 			wantErr: "JWT_SECRET is required",
+		},
+		{
+			name:    "missing google web client id",
+			env:     withRequired(map[string]string{"GOOGLE_WEB_CLIENT_ID": ""}),
+			wantErr: "GOOGLE_WEB_CLIENT_ID is required",
 		},
 		{
 			name:    "invalid log level",

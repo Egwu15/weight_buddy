@@ -20,6 +20,9 @@ a single static binary, configured purely from environment variables, with
 ## Endpoints (v1)
 
 - `POST /v1/auth/anonymous` `{install_id}` -> `{token, user_id}`
+- `POST /v1/auth/google` `{id_token, install_id}` -> `{token, user_id, linked}`;
+  an anonymous `Authorization` session on the request is linked to the same
+  account, so usage and any RevenueCat purchase stay attached
 - `GET  /v1/me` -> user, entitlement, remaining limits, spend remaining
 - `POST /v1/webhooks/revenuecat` — `Authorization` header checked in constant
   time; idempotent on the event id
@@ -37,6 +40,7 @@ and spend cap -> call the provider -> record usage -> respond.
     createdb weight_buddy
     export DATABASE_URL="postgres://user@localhost:5432/weight_buddy?sslmode=disable"
     export JWT_SECRET="dev-secret"
+    export GOOGLE_WEB_CLIENT_ID="your-web-client.apps.googleusercontent.com"
     make migrate
     make run
 
@@ -70,6 +74,6 @@ One static binary behind Caddy on the same host as Postgres.
 
 ## Configuration
 
-Every variable is documented in `.env.example`. `DATABASE_URL` and `JWT_SECRET`
-are required; everything else has a default. Limits and per-kind costs live in
-`internal/limits` (a Go struct), not the database.
+Every variable is documented in `.env.example`. `DATABASE_URL`, `JWT_SECRET` and
+`GOOGLE_WEB_CLIENT_ID` are required; everything else has a default. Limits and
+per-kind costs live in `internal/limits` (a Go struct), not the database.

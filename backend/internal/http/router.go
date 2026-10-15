@@ -29,6 +29,9 @@ type Deps struct {
 	Store Store
 	// Tokens issues and verifies app session tokens.
 	Tokens *auth.Tokens
+	// GoogleVerifier verifies Google ID tokens. Nil disables the Google
+	// sign-in route with a 503.
+	GoogleVerifier auth.TokenVerifier
 	// JWTSecret salts the hashed client IP used for the per-device cap.
 	JWTSecret string
 	// FreeAccountsPerDevice caps anonymous free accounts per device per day.
@@ -75,6 +78,7 @@ func NewRouter(deps Deps) http.Handler {
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Post("/auth/anonymous", deps.handleAnonymous)
+		r.Post("/auth/google", deps.handleGoogle)
 		r.Post("/webhooks/revenuecat", deps.handleRevenueCatWebhook)
 
 		r.Group(func(r chi.Router) {

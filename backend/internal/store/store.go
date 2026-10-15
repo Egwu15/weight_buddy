@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -44,10 +45,13 @@ func (s *Store) Close() { s.pool.Close() }
 // Pool exposes the underlying pool for the migration command and tests.
 func (s *Store) Pool() *pgxpool.Pool { return s.pool }
 
-// User is an app account, keyed by the client's random install id.
+// User is an app account, keyed by the client's random install id. GoogleSub
+// is set only once the account has signed in with Google; it is the stable
+// identity that survives reinstalls.
 type User struct {
 	ID        string
 	InstallID string
+	GoogleSub *string
 	CreatedAt time.Time
 }
 
@@ -82,11 +86,11 @@ WITH ins AS (
     INSERT INTO users (install_id)
     VALUES ($1)
     ON CONFLICT (install_id) DO NOTHING
-    RETURNING id::text AS id, install_id, created_at, true AS created
+    RETURNING id::text AS id, install_id, google_sub, created_at, true AS created
 )
-SELECT id, install_id, created_at, created FROM ins
+SELECT id, install_id, google_sub, created_at, created FROM ins
 UNION ALL
-SELECT id::text, install_id, created_at, false FROM users WHERE install_id = $1
+SELECT id::text, install_id, google_sub, created_at, false FROM users WHERE install_id = $1
 ORDER BY created DESC
 LIMIT 1`
 	var (
@@ -94,7 +98,7 @@ LIMIT 1`
 		created bool
 	)
 	if err := s.pool.QueryRow(ctx, q, installID).
-		Scan(&u.ID, &u.InstallID, &u.CreatedAt, &created); err != nil {
+		Scan(&u.ID, &u.InstallID, &u.GoogleSub, &u.CreatedAt, &created); err != nil {
 		return User{}, false, fmt.Errorf("create or get user: %w", err)
 	}
 	return u, created, nil
@@ -103,9 +107,9 @@ LIMIT 1`
 // UserByInstallID loads the account for a device, returning ErrNotFound when
 // the device has never signed in.
 func (s *Store) UserByInstallID(ctx context.Context, installID string) (User, error) {
-	const q = `SELECT id::text, install_id, created_at FROM users WHERE install_id = $1`
+	const q = `SELECT id::text, install_id, google_sub, created_at FROM users WHERE install_id = $1`
 	var u User
-	if err := s.pool.QueryRow(ctx, q, installID).Scan(&u.ID, &u.InstallID, &u.CreatedAt); err != nil {
+	if err := s.pool.QueryRow(ctx, q, installID).Scan(&u.ID, &u.InstallID, &u.GoogleSub, &u.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, ErrNotFound
 		}
@@ -116,9 +120,9 @@ func (s *Store) UserByInstallID(ctx context.Context, installID string) (User, er
 
 // UserByID loads a single account, returning ErrNotFound when it is absent.
 func (s *Store) UserByID(ctx context.Context, id string) (User, error) {
-	const q = `SELECT id::text, install_id, created_at FROM users WHERE id = $1::uuid`
+	const q = `SELECT id::text, install_id, google_sub, created_at FROM users WHERE id = $1::uuid`
 	var u User
-	if err := s.pool.QueryRow(ctx, q, id).Scan(&u.ID, &u.InstallID, &u.CreatedAt); err != nil {
+	if err := s.pool.QueryRow(ctx, q, id).Scan(&u.ID, &u.InstallID, &u.GoogleSub, &u.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, ErrNotFound
 		}
@@ -271,15 +275,15 @@ func (s *Store) CreateUserIfAllowed(ctx context.Context, installID, ipHash strin
 	row := tx.QueryRow(ctx,
 		`INSERT INTO users (install_id) VALUES ($1)
 		 ON CONFLICT (install_id) DO NOTHING
-		 RETURNING id::text, install_id, created_at`, installID)
-	if scanErr := row.Scan(&user.ID, &user.InstallID, &user.CreatedAt); scanErr != nil {
+		 RETURNING id::text, install_id, google_sub, created_at`, installID)
+	if scanErr := row.Scan(&user.ID, &user.InstallID, &user.GoogleSub, &user.CreatedAt); scanErr != nil {
 		if !errors.Is(scanErr, pgx.ErrNoRows) {
 			return User{}, false, false, fmt.Errorf("create user: %w", scanErr)
 		}
 		// The device already has an account: sign in without counting.
 		if err := tx.QueryRow(ctx,
-			`SELECT id::text, install_id, created_at FROM users WHERE install_id = $1`, installID).
-			Scan(&user.ID, &user.InstallID, &user.CreatedAt); err != nil {
+			`SELECT id::text, install_id, google_sub, created_at FROM users WHERE install_id = $1`, installID).
+			Scan(&user.ID, &user.InstallID, &user.GoogleSub, &user.CreatedAt); err != nil {
 			return User{}, false, false, fmt.Errorf("load existing user: %w", err)
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -304,6 +308,169 @@ func (s *Store) CreateUserIfAllowed(ctx context.Context, installID, ipHash strin
 		return User{}, false, false, fmt.Errorf("commit signup tx: %w", err)
 	}
 	return user, true, true, nil
+}
+
+// GoogleSignIn resolves a verified Google subject to an account, creating or
+// linking one as needed, and reports whether an existing account was linked.
+//
+// Precedence:
+//  1. an account already carrying this google_sub is returned (returning user);
+//  2. otherwise, when linkUserID names an account with no google_sub, the
+//     subject is attached to that same account so its usage history and any
+//     RevenueCat entitlement stay linked (linked=true);
+//  3. otherwise a new account is created for the subject.
+//
+// It runs in one transaction. Two concurrent requests for the same new subject
+// race on the unique index over google_sub: the losing INSERT does nothing and
+// the loser re-reads the winner's account, so a subject never ends up with two
+// accounts. The unique install_id is handled the same way, falling back to
+// linking the device's existing account.
+func (s *Store) GoogleSignIn(ctx context.Context, sub, installID, linkUserID string) (User, bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return User{}, false, fmt.Errorf("begin google sign-in tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// 1. Returning account for this subject.
+	if u, found, err := googleUserBySub(ctx, tx, sub); err != nil {
+		return User{}, false, err
+	} else if found {
+		if err := tx.Commit(ctx); err != nil {
+			return User{}, false, fmt.Errorf("commit google sign-in tx: %w", err)
+		}
+		return u, false, nil
+	}
+
+	// 2. Link the anonymous account whose session this request carried.
+	if linkUserID != "" {
+		u, updated, err := linkGoogleSub(ctx, tx, sub, linkUserID)
+		if err != nil {
+			return User{}, false, err
+		}
+		if updated {
+			if err := tx.Commit(ctx); err != nil {
+				return User{}, false, fmt.Errorf("commit google sign-in tx: %w", err)
+			}
+			return u, true, nil
+		}
+		// Could not attach the subject (a concurrent request claimed it, or the
+		// account already moved on). Drop this transaction and settle from a
+		// fresh connection.
+		_ = tx.Rollback(ctx)
+		return s.resolveGoogleConflict(ctx, sub, installID)
+	}
+
+	// 3. New account for this subject.
+	u, inserted, err := insertGoogleUser(ctx, tx, installID, sub)
+	if err != nil {
+		return User{}, false, err
+	}
+	if !inserted {
+		// Lost a race on google_sub or install_id.
+		_ = tx.Rollback(ctx)
+		return s.resolveGoogleConflict(ctx, sub, installID)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return User{}, false, fmt.Errorf("commit google sign-in tx: %w", err)
+	}
+	return u, false, nil
+}
+
+// resolveGoogleConflict settles a Google sign-in that raced another writer on a
+// unique constraint, using the pool outside any transaction. The subject is the
+// stronger identity, so a subject owner wins; otherwise the install id's
+// existing, subject-less account is linked.
+func (s *Store) resolveGoogleConflict(ctx context.Context, sub, installID string) (User, bool, error) {
+	if u, found, err := googleUserBySub(ctx, s.pool, sub); err != nil {
+		return User{}, false, err
+	} else if found {
+		return u, false, nil
+	}
+
+	existing, err := s.UserByInstallID(ctx, installID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return User{}, false, err
+	}
+	if err == nil && existing.GoogleSub == nil {
+		if u, updated, err := linkGoogleSub(ctx, s.pool, sub, existing.ID); err != nil {
+			return User{}, false, err
+		} else if updated {
+			return u, true, nil
+		}
+	}
+
+	// Another writer may have settled it between the checks above.
+	if u, found, err := googleUserBySub(ctx, s.pool, sub); err != nil {
+		return User{}, false, err
+	} else if found {
+		return u, false, nil
+	}
+	return User{}, false, fmt.Errorf("google sign-in: could not resolve subject")
+}
+
+// rowQuerier is the subset of pgx shared by the pool and a transaction, so the
+// Google helpers work both inside a transaction and directly on the pool.
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// googleUserBySub loads the account that owns a Google subject.
+func googleUserBySub(ctx context.Context, q rowQuerier, sub string) (User, bool, error) {
+	const stmt = `SELECT id::text, install_id, google_sub, created_at FROM users WHERE google_sub = $1`
+	var u User
+	err := q.QueryRow(ctx, stmt, sub).Scan(&u.ID, &u.InstallID, &u.GoogleSub, &u.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return User{}, false, nil
+	}
+	if err != nil {
+		return User{}, false, fmt.Errorf("load user by google sub: %w", err)
+	}
+	return u, true, nil
+}
+
+// linkGoogleSub attaches a subject to a subject-less account. It reports false
+// when the account does not exist or already carries a subject; a unique
+// violation (the subject was claimed concurrently) is reported the same way.
+func linkGoogleSub(ctx context.Context, q rowQuerier, sub, userID string) (User, bool, error) {
+	const stmt = `UPDATE users SET google_sub = $1
+	 WHERE id = $2::uuid AND google_sub IS NULL
+	 RETURNING id::text, install_id, google_sub, created_at`
+	var u User
+	err := q.QueryRow(ctx, stmt, sub, userID).Scan(&u.ID, &u.InstallID, &u.GoogleSub, &u.CreatedAt)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return User{}, false, nil
+	case isUniqueViolation(err):
+		return User{}, false, nil
+	case err != nil:
+		return User{}, false, fmt.Errorf("link google sub: %w", err)
+	}
+	return u, true, nil
+}
+
+// insertGoogleUser creates an account for a subject. It reports false when a
+// unique constraint (either google_sub or install_id) was violated, leaving the
+// caller to resolve the winner.
+func insertGoogleUser(ctx context.Context, q rowQuerier, installID, sub string) (User, bool, error) {
+	const stmt = `INSERT INTO users (install_id, google_sub) VALUES ($1, $2)
+	 ON CONFLICT DO NOTHING
+	 RETURNING id::text, install_id, google_sub, created_at`
+	var u User
+	err := q.QueryRow(ctx, stmt, installID, sub).Scan(&u.ID, &u.InstallID, &u.GoogleSub, &u.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return User{}, false, nil
+	}
+	if err != nil {
+		return User{}, false, fmt.Errorf("insert google user: %w", err)
+	}
+	return u, true, nil
+}
+
+// isUniqueViolation reports whether err is a Postgres unique-constraint error.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 // ApplyEntitlementEvent records a RevenueCat event and applies its entitlement

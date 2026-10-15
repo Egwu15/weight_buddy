@@ -82,6 +82,10 @@ type Config struct {
 	// RevenueCat settings. The webhook secret is compared in constant time.
 	RevenueCatWebhookSecret string
 	RevenueCatEntitlementID string
+
+	// GoogleWebClientID is the OAuth Web client id that Google ID tokens must
+	// be minted for. Required: it is the audience the backend verifies.
+	GoogleWebClientID string
 }
 
 // IsProduction reports whether the service is running in production mode.
@@ -197,6 +201,11 @@ func load(lookup envLookup) (Config, error) {
 
 	cfg.RevenueCatWebhookSecret = getEnv(lookup, "REVENUECAT_WEBHOOK_SECRET", "")
 	cfg.RevenueCatEntitlementID = getEnv(lookup, "REVENUECAT_ENTITLEMENT", defaultRevenueCatEntitleID)
+
+	cfg.GoogleWebClientID = strings.TrimSpace(getEnv(lookup, "GOOGLE_WEB_CLIENT_ID", ""))
+	if cfg.GoogleWebClientID == "" {
+		errs = append(errs, errors.New("GOOGLE_WEB_CLIENT_ID is required"))
+	}
 
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)

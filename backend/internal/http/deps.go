@@ -13,6 +13,7 @@ type Store interface {
 	UserByID(ctx context.Context, id string) (store.User, error)
 	CreateOrGetUser(ctx context.Context, installID string) (store.User, bool, error)
 	CreateUserIfAllowed(ctx context.Context, installID, ipHash string, cap int) (store.User, bool, bool, error)
+	GoogleSignIn(ctx context.Context, sub, installID, linkUserID string) (store.User, bool, error)
 
 	Entitlement(ctx context.Context, userID string) (store.Entitlement, error)
 	RecordRevenueCatEvent(ctx context.Context, eventID string, payload []byte) (bool, error)

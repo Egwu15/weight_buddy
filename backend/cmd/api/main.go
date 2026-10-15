@@ -62,6 +62,11 @@ func run() error {
 		SpendCap: cfg.DailySpendCapUSD,
 	}
 
+	googleVerifier, err := auth.NewGoogleVerifier(ctx, cfg.GoogleWebClientID)
+	if err != nil {
+		return err
+	}
+
 	ln, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.HTTPAddr, err)
@@ -72,6 +77,7 @@ func run() error {
 		RequestTimeout:            cfg.RequestTimeout,
 		Store:                     db,
 		Tokens:                    auth.NewTokens(cfg.JWTSecret, cfg.JWTTTL),
+		GoogleVerifier:            googleVerifier,
 		JWTSecret:                 cfg.JWTSecret,
 		FreeAccountsPerDevice:     cfg.FreeAccountsPerDevice,
 		RevenueCatWebhookSecret:   cfg.RevenueCatWebhookSecret,

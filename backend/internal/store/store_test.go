@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -309,5 +311,118 @@ func TestUsageTodayByKindGroupsRows(t *testing.T) {
 	}
 	if got["transcribe"] != 2 || got["parse"] != 3 {
 		t.Fatalf("usage by kind = %+v, want transcribe 2 / parse 3", got)
+	}
+}
+
+func TestGoogleSignInLinksPreservingAccount(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	anon, _, err := s.CreateOrGetUser(ctx, "device-link")
+	if err != nil {
+		t.Fatalf("create anonymous: %v", err)
+	}
+
+	linked, isLinked, err := s.GoogleSignIn(ctx, "sub-link", "device-link", anon.ID)
+	if err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	if !isLinked {
+		t.Fatal("linking an anonymous account should report linked")
+	}
+	if linked.ID != anon.ID {
+		t.Fatalf("linked id = %q, want the anonymous id %q", linked.ID, anon.ID)
+	}
+	if linked.GoogleSub == nil || *linked.GoogleSub != "sub-link" {
+		t.Fatalf("google_sub = %v, want sub-link", linked.GoogleSub)
+	}
+
+	// Signing in again from a new install returns the same account, not linked.
+	again, isLinked, err := s.GoogleSignIn(ctx, "sub-link", "device-new-install", "")
+	if err != nil {
+		t.Fatalf("returning: %v", err)
+	}
+	if isLinked {
+		t.Fatal("a returning subject must not report linked")
+	}
+	if again.ID != anon.ID {
+		t.Fatalf("returning id = %q, want %q", again.ID, anon.ID)
+	}
+}
+
+func TestGoogleSignInSubjectOwnedByOtherUserIsNotMerged(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	owner, _, err := s.GoogleSignIn(ctx, "sub-owned", "device-owner", "")
+	if err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	anon, _, err := s.CreateOrGetUser(ctx, "device-other")
+	if err != nil {
+		t.Fatalf("create anonymous: %v", err)
+	}
+
+	got, isLinked, err := s.GoogleSignIn(ctx, "sub-owned", "device-other", anon.ID)
+	if err != nil {
+		t.Fatalf("sign in: %v", err)
+	}
+	if isLinked {
+		t.Fatal("a subject already owned by another user must not report linked")
+	}
+	if got.ID != owner.ID {
+		t.Fatalf("id = %q, want the subject owner %q", got.ID, owner.ID)
+	}
+
+	// The anonymous account is untouched: no subject was attached.
+	reloaded, err := s.UserByID(ctx, anon.ID)
+	if err != nil {
+		t.Fatalf("reload anonymous: %v", err)
+	}
+	if reloaded.GoogleSub != nil {
+		t.Fatalf("anonymous account was modified, google_sub = %v", *reloaded.GoogleSub)
+	}
+}
+
+// TestGoogleSignInRaceCreatesOneUser fires many concurrent sign-ins for the same
+// new subject. The unique index must serialise them into a single account.
+func TestGoogleSignInRaceCreatesOneUser(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	const n = 8
+	ids := make([]string, n)
+	errs := make([]error, n)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			u, _, err := s.GoogleSignIn(ctx, "sub-race", fmt.Sprintf("device-race-%d", i), "")
+			ids[i] = u.ID
+			errs[i] = err
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("call %d: %v", i, err)
+		}
+		if ids[i] != ids[0] {
+			t.Fatalf("call %d returned user %q, want %q", i, ids[i], ids[0])
+		}
+	}
+
+	// Exactly one account owns the subject.
+	var count int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE google_sub = $1`, "sub-race").Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("users with subject = %d, want 1", count)
 	}
 }
