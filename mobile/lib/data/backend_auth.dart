@@ -8,17 +8,20 @@ import '../config.dart';
 import 'secure_settings.dart';
 
 /// A signed-in backend session. The token is the app's session JWT; the
-/// install id is the device's stable, random identifier.
+/// install id is the device's stable, random identifier. [googleLinked] records
+/// whether the session came from Google Sign-In.
 class BackendSession {
   const BackendSession({
     required this.userId,
     required this.installId,
     required this.token,
+    this.googleLinked = false,
   });
 
   final String userId;
   final String installId;
   final String token;
+  final bool googleLinked;
 }
 
 class BackendAuthException implements Exception {
@@ -62,20 +65,54 @@ class BackendAuth {
       await _store.clearSession();
       return null;
     }
-    return BackendSession(userId: userId, installId: installId, token: token);
+    return BackendSession(
+      userId: userId,
+      installId: installId,
+      token: token,
+      googleLinked: await _store.readGoogleLinked(),
+    );
   }
 
   /// Signs the device in, reusing the stored install id when there is one so a
   /// returning device keeps the same account.
   Future<BackendSession> signIn() async {
     final installId = await _ensureInstallId();
+    final body = await _post('/v1/auth/anonymous', {'install_id': installId});
+    return _persist(body, installId: installId, googleLinked: false);
+  }
+
+  /// Signs in with a Google ID token. The install id, and the current anonymous
+  /// session token when there is one, are sent so the backend links the Google
+  /// account to this device's existing account instead of creating a new one.
+  Future<BackendSession> signInWithGoogle({required String idToken}) async {
+    final installId = await _ensureInstallId();
+    final existing = await _store.readToken();
+    final body = await _post(
+      '/v1/auth/google',
+      {'id_token': idToken, 'install_id': installId},
+      bearer: (existing != null && existing.isNotEmpty) ? existing : null,
+    );
+    return _persist(body, installId: installId, googleLinked: true);
+  }
+
+  /// POSTs a JSON body to the backend and decodes the reply, mapping transport
+  /// and error responses to a [BackendAuthException] with a message safe to
+  /// show. The token is never logged.
+  Future<Map<String, dynamic>> _post(
+    String path,
+    Map<String, Object?> payload, {
+    String? bearer,
+  }) async {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    if (bearer != null) headers['Authorization'] = 'Bearer $bearer';
+
     final http.Response response;
     try {
       response = await _client
           .post(
-            Uri.parse('$_baseUrl/v1/auth/anonymous'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'install_id': installId}),
+            Uri.parse('$_baseUrl$path'),
+            headers: headers,
+            body: jsonEncode(payload),
           )
           .timeout(_timeout);
     } on TimeoutException {
@@ -86,20 +123,38 @@ class BackendAuth {
           'Could not reach Weight Buddy. Check your connection and try again.');
     }
     if (response.statusCode != 200) {
+      // Includes the 401 a rejected Google token returns: the backend's error
+      // message is already user-safe.
       throw BackendAuthException(_errorMessage(response));
     }
+    try {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      throw const BackendAuthException(
+          'Weight Buddy returned an unexpected reply. Try again.');
+    }
+  }
 
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+  Future<BackendSession> _persist(
+    Map<String, dynamic> body, {
+    required String installId,
+    required bool googleLinked,
+  }) async {
     final token = body['token'] as String?;
     final userId = body['user_id'] as String?;
     if (token == null || token.isEmpty || userId == null || userId.isEmpty) {
       throw const BackendAuthException(
           'Weight Buddy returned an unexpected reply. Try again.');
     }
-
     await _store.writeToken(token);
     await _store.writeUserId(userId);
-    return BackendSession(userId: userId, installId: installId, token: token);
+    await _store.writeGoogleLinked(googleLinked);
+    return BackendSession(
+      userId: userId,
+      installId: installId,
+      token: token,
+      googleLinked: googleLinked,
+    );
   }
 
   /// Clears the stored session (keeping the vocabulary) so the next sign-in

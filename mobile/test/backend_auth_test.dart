@@ -137,6 +137,120 @@ void main() {
       )),
     );
   });
+
+  test('signInWithGoogle sends the id token and links the session', () async {
+    final existing = _jwt(exp: 9999999999);
+    FlutterSecureStorage.setMockInitialValues({
+      'backend_install_id': 'install-1',
+      'backend_user_id': 'anon-user',
+      'backend_token': existing,
+    });
+
+    late http.Request captured;
+    final auth = BackendAuth(
+      client: MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({'token': 'jwt-g', 'user_id': 'user-1', 'linked': true}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+      baseUrl: _base,
+    );
+
+    final session = await auth.signInWithGoogle(idToken: 'google-id-token');
+
+    expect(captured.url.path, '/v1/auth/google');
+    final body = jsonDecode(captured.body) as Map<String, dynamic>;
+    expect(body['id_token'], 'google-id-token');
+    expect(body['install_id'], 'install-1');
+    // The current anonymous session rides along so the backend can link it.
+    expect(captured.headers['authorization'], 'Bearer $existing');
+
+    expect(session.userId, 'user-1');
+    expect(session.googleLinked, isTrue);
+    final store = SecureSettings();
+    expect(await store.readToken(), 'jwt-g');
+    expect(await store.readGoogleLinked(), isTrue);
+  });
+
+  test('signInWithGoogle omits the bearer when there is no session', () async {
+    late http.Request captured;
+    final auth = BackendAuth(
+      client: MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({'token': 'jwt-g', 'user_id': 'user-1'}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+      baseUrl: _base,
+    );
+
+    await auth.signInWithGoogle(idToken: 'token');
+
+    expect(captured.headers.containsKey('authorization'), isFalse);
+  });
+
+  test('signInWithGoogle surfaces a rejected token (401)', () async {
+    final auth = BackendAuth(
+      client: MockClient((_) async => http.Response(
+            jsonEncode({
+              'error': {
+                'code': 'unauthorized',
+                'message': 'We could not verify your Google sign-in. Try again.',
+              },
+            }),
+            401,
+            headers: {'content-type': 'application/json'},
+          )),
+      baseUrl: _base,
+    );
+
+    expect(
+      () => auth.signInWithGoogle(idToken: 'bad'),
+      throwsA(isA<BackendAuthException>().having(
+        (e) => e.message,
+        'message',
+        contains('could not verify'),
+      )),
+    );
+  });
+
+  test('restore reports a Google-linked session', () async {
+    FlutterSecureStorage.setMockInitialValues({
+      'backend_install_id': 'install-1',
+      'backend_user_id': 'user-1',
+      'backend_token': _jwt(exp: 9999999999),
+      'backend_google_linked': 'true',
+    });
+
+    final restored = await BackendAuth(baseUrl: _base).restore();
+    expect(restored, isNotNull);
+    expect(restored!.googleLinked, isTrue);
+  });
+
+  test('clearIdentity keeps the install id and vocabulary', () async {
+    FlutterSecureStorage.setMockInitialValues({
+      'backend_install_id': 'install-1',
+      'backend_user_id': 'user-1',
+      'backend_token': _jwt(exp: 9999999999),
+      'backend_google_linked': 'true',
+      'custom_vocabulary': 'Jollof, Egusi',
+    });
+
+    await SecureSettings().clearIdentity();
+
+    final store = SecureSettings();
+    expect(await store.readToken(), isNull);
+    expect(await store.readUserId(), isNull);
+    expect(await store.readGoogleLinked(), isFalse);
+    // The device keeps its identity so the anonymous trial resumes in place.
+    expect(await store.readInstallId(), 'install-1');
+    expect(await store.readVocabulary(), 'Jollof, Egusi');
+  });
 }
 
 /// Builds a minimal (unverifiable) JWT with the given expiry for restore tests.

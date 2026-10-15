@@ -6,6 +6,7 @@ import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/google_signin_card.dart';
 
 /// Account & voice settings: the signed-in session, today's remaining AI
 /// allowance, and the vocabulary the transcription should recognize. There is
@@ -78,6 +79,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
               label: const Text('Try connecting again'),
             ),
           ],
+          const SizedBox(height: 20),
+          Text('Sign-in', style: AppText.label()),
+          const SizedBox(height: 8),
+          const GoogleSignInCard(),
           const SizedBox(height: 20),
           Text('Today', style: AppText.label()),
           const SizedBox(height: 8),

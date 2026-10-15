@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/app_database.dart';
 import '../data/backend_auth.dart';
+import '../data/google_signin.dart';
+import '../data/revenuecat_identity.dart';
 import '../data/ai_service.dart';
 import '../data/reminder_service.dart';
 import '../data/secure_settings.dart';
@@ -24,18 +26,40 @@ final databaseProvider = FutureProvider<AppDatabase>(
   (ref) => AppDatabase.open(),
 );
 
-/// Persisted app settings: the anonymous backend session plus the custom
-/// vocabulary. The AI provider key lives on the backend, never here.
+/// Persisted app settings: the backend session (anonymous or Google) plus the
+/// custom vocabulary. The AI provider key lives on the backend, never here.
 class AppSettings {
-  const AppSettings({required this.token, required this.vocabulary});
+  const AppSettings({
+    required this.token,
+    required this.vocabulary,
+    this.userId = '',
+    this.googleLinked = false,
+  });
 
   /// The backend session token (empty until the device has signed in).
   final String token;
   final String vocabulary;
 
+  /// The backend user id the session belongs to (empty until signed in).
+  final String userId;
+
+  /// Whether the session came from Google Sign-In.
+  final bool googleLinked;
+
   /// Whether the device holds a usable backend session.
   bool get isConfigured => token.trim().isNotEmpty;
 }
+
+/// The Google ID token source. Overridable in tests so the sign-in flow can be
+/// exercised without the platform sign-in UI.
+final googleIdentityProvider = Provider<GoogleIdTokenProvider>(
+  (ref) => GoogleSignInService(),
+);
+
+/// RevenueCat identity seam (a no-op until the purchase SDK is added).
+final revenueCatIdentityProvider = Provider<RevenueCatIdentity>(
+  (ref) => const RevenueCatIdentity(),
+);
 
 final settingsProvider = AsyncNotifierProvider<SettingsController, AppSettings>(
   SettingsController.new,
@@ -48,8 +72,12 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     final vocab = await store.readVocabulary() ?? '';
     final auth = BackendAuth(store: store);
 
-    AppSettings from(BackendSession? session) =>
-        AppSettings(token: session?.token ?? '', vocabulary: vocab);
+    AppSettings from(BackendSession? session) => AppSettings(
+          token: session?.token ?? '',
+          vocabulary: vocab,
+          userId: session?.userId ?? '',
+          googleLinked: session?.googleLinked ?? false,
+        );
 
     // Prefer a stored session; otherwise sign in. Sign-in failures (offline on
     // first launch) leave the device unconfigured rather than crashing, so the
@@ -72,6 +100,8 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     state = AsyncData(AppSettings(
       token: current?.token ?? '',
       vocabulary: vocabulary.trim(),
+      userId: current?.userId ?? '',
+      googleLinked: current?.googleLinked ?? false,
     ));
   }
 
@@ -85,8 +115,64 @@ class SettingsController extends AsyncNotifier<AppSettings> {
       final auth = BackendAuth(store: store);
       await auth.clearSession();
       final session = await auth.signIn();
-      return AppSettings(token: session.token, vocabulary: vocab);
+      return AppSettings(
+        token: session.token,
+        vocabulary: vocab,
+        userId: session.userId,
+        googleLinked: session.googleLinked,
+      );
     });
+  }
+
+  /// Signs in with Google. The current anonymous session (if any) is sent so
+  /// the backend links the Google account to this device's existing account,
+  /// keeping its usage history and any purchase. Throws on failure — including
+  /// [GoogleSignInCancelled] — so the caller can show the right message.
+  Future<void> signInWithGoogle() async {
+    final store = SecureSettings();
+    final vocab = await store.readVocabulary() ?? '';
+    final google = ref.read(googleIdentityProvider);
+    final revenueCat = ref.read(revenueCatIdentityProvider);
+
+    final idToken = await google.idToken();
+    final session =
+        await BackendAuth(store: store).signInWithGoogle(idToken: idToken);
+    // Purchases must follow our backend user id, not the previous anonymous one.
+    await revenueCat.logIn(session.userId);
+
+    state = AsyncData(AppSettings(
+      token: session.token,
+      vocabulary: vocab,
+      userId: session.userId,
+      googleLinked: true,
+    ));
+  }
+
+  /// Signs out of Google and returns the device to the anonymous trial. Clears
+  /// the session credentials and the RevenueCat user, then signs in anonymously
+  /// again on the same install id. A failed anonymous re-sign-in leaves the
+  /// device unconfigured (the account screen offers a retry) rather than
+  /// crashing.
+  Future<void> signOut() async {
+    final store = SecureSettings();
+    final vocab = await store.readVocabulary() ?? '';
+
+    await ref.read(googleIdentityProvider).signOut();
+    await ref.read(revenueCatIdentityProvider).logOut();
+    await store.clearIdentity();
+
+    state = const AsyncLoading();
+    try {
+      final session = await BackendAuth(store: store).signIn();
+      state = AsyncData(AppSettings(
+        token: session.token,
+        vocabulary: vocab,
+        userId: session.userId,
+        googleLinked: false,
+      ));
+    } catch (_) {
+      state = AsyncData(AppSettings(token: '', vocabulary: vocab));
+    }
   }
 }
 

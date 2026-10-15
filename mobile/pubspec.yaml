@@ -71,6 +71,7 @@ dependencies:
   intl: ^0.20.2
   package_info_plus: ^8.3.0
   uuid: ^4.5.2
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:
