@@ -200,33 +200,114 @@ func TestRecordUsageAndSpend(t *testing.T) {
 	}
 }
 
-func TestRegisterSignupHonoursCap(t *testing.T) {
+func TestCreateUserIfAllowedHonoursCap(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 
-	for i := 1; i <= 2; i++ {
-		ok, err := s.RegisterSignup(ctx, "hash-a", 2)
-		if err != nil {
-			t.Fatalf("signup %d: %v", i, err)
-		}
-		if !ok {
-			t.Fatalf("signup %d should be within cap 2", i)
-		}
-	}
-	ok, err := s.RegisterSignup(ctx, "hash-a", 2)
+	// First device from an IP is created and allowed.
+	u1, created, allowed, err := s.CreateUserIfAllowed(ctx, "device-a", "hash-a", 1)
 	if err != nil {
-		t.Fatalf("signup: %v", err)
+		t.Fatalf("create: %v", err)
 	}
-	if ok {
-		t.Fatal("third signup should exceed cap 2")
+	if !created || !allowed {
+		t.Fatalf("first signup created=%v allowed=%v, want true/true", created, allowed)
 	}
 
-	// A different device has its own counter.
-	ok, err = s.RegisterSignup(ctx, "hash-b", 2)
+	// A second, different device from the same IP exceeds the cap: it must not
+	// be created and must not leave a row or bump the counter.
+	_, created, allowed, err = s.CreateUserIfAllowed(ctx, "device-b", "hash-a", 1)
 	if err != nil {
-		t.Fatalf("signup other device: %v", err)
+		t.Fatalf("create second: %v", err)
 	}
-	if !ok {
-		t.Fatal("a fresh device should be within its own cap")
+	if created || allowed {
+		t.Fatalf("over-cap signup created=%v allowed=%v, want false/false", created, allowed)
+	}
+	if _, err := s.UserByInstallID(ctx, "device-b"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("over-cap device should not exist, got %v", err)
+	}
+
+	// The same device signing in again is not counted and is always allowed.
+	u2, created, allowed, err := s.CreateUserIfAllowed(ctx, "device-a", "hash-a", 1)
+	if err != nil {
+		t.Fatalf("re-signin: %v", err)
+	}
+	if created || !allowed || u2.ID != u1.ID {
+		t.Fatalf("re-signin created=%v allowed=%v id-match=%v", created, allowed, u2.ID == u1.ID)
+	}
+
+	// A different IP has its own budget.
+	_, created, allowed, err = s.CreateUserIfAllowed(ctx, "device-c", "hash-b", 1)
+	if err != nil {
+		t.Fatalf("create other ip: %v", err)
+	}
+	if !created || !allowed {
+		t.Fatalf("fresh IP created=%v allowed=%v, want true/true", created, allowed)
+	}
+}
+
+func TestApplyEntitlementEventIsAtomic(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	u, _, err := s.CreateOrGetUser(ctx, "install-ent")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	expiry := time.Now().Add(24 * time.Hour)
+
+	applied, err := s.ApplyEntitlementEvent(ctx, "evt-a", []byte(`{"type":"INITIAL_PURCHASE"}`), Entitlement{
+		UserID:      u.ID,
+		Entitlement: "pro",
+		Status:      "active",
+		ExpiresAt:   &expiry,
+	})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if !applied {
+		t.Fatal("first delivery should apply")
+	}
+	got, err := s.Entitlement(ctx, u.ID)
+	if err != nil || got.Status != "active" {
+		t.Fatalf("entitlement = %+v, err=%v", got, err)
+	}
+
+	// A retry of the same event id is a no-op, not a re-application.
+	applied, err = s.ApplyEntitlementEvent(ctx, "evt-a", []byte(`{"type":"INITIAL_PURCHASE"}`), Entitlement{
+		UserID: u.ID, Entitlement: "pro", Status: "expired",
+	})
+	if err != nil {
+		t.Fatalf("apply duplicate: %v", err)
+	}
+	if applied {
+		t.Fatal("duplicate event should not re-apply")
+	}
+	got, _ = s.Entitlement(ctx, u.ID)
+	if got.Status != "active" {
+		t.Fatalf("duplicate changed state to %q", got.Status)
+	}
+}
+
+func TestUsageTodayByKindGroupsRows(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	u, _, err := s.CreateOrGetUser(ctx, "install-usage")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := s.RecordUsage(ctx, u.ID, "transcribe", 2, 0.01); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	if err := s.RecordUsage(ctx, u.ID, "parse", 3, 0.02); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+
+	got, err := s.UsageTodayByKind(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("usage by kind: %v", err)
+	}
+	if got["transcribe"] != 2 || got["parse"] != 3 {
+		t.Fatalf("usage by kind = %+v, want transcribe 2 / parse 3", got)
 	}
 }

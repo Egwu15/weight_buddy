@@ -18,6 +18,9 @@ const maxAudioUpload = 25 << 20 // 25 MiB
 type parseRequest struct {
 	Transcript string   `json:"transcript"`
 	WeightKg   *float64 `json:"weight_kg"`
+	// LocalTime is the device's wall clock (HH:MM), used to classify meals
+	// correctly regardless of the server's timezone.
+	LocalTime string `json:"local_time"`
 }
 
 type chatRequest struct {
@@ -37,7 +40,17 @@ func (d Deps) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cap the whole body, not just the in-memory multipart threshold: without
+	// this, bytes beyond maxAudioUpload are streamed to temp files with no
+	// total limit. The small margin covers multipart framing overhead.
+	r.Body = http.MaxBytesReader(w, r.Body, maxAudioUpload+(1<<20))
 	if err := r.ParseMultipartForm(maxAudioUpload); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "payload_too_large",
+				"That recording is too large. Try a shorter one.")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_request", "Expected a multipart upload with an audio file.")
 		return
 	}
@@ -107,7 +120,13 @@ func (d Deps) handleParse(w http.ResponseWriter, r *http.Request, kind limits.Ki
 		return
 	}
 
-	system := ai.ParseSystemPrompt(time.Now())
+	// Classify meals against the device's local time when it is given, falling
+	// back to the server clock only when it is missing or malformed.
+	localTime := strings.TrimSpace(req.LocalTime)
+	if _, err := time.Parse("15:04", localTime); err != nil {
+		localTime = time.Now().Format("15:04")
+	}
+	system := ai.ParseSystemPromptText(localTime)
 	if entryType != "" {
 		system += "\nSet entry_type to \"" + entryType + "\"."
 	}

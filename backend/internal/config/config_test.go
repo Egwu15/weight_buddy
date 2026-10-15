@@ -2,6 +2,8 @@ package config
 
 import (
 	"log/slog"
+	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -53,8 +55,8 @@ func TestLoad(t *testing.T) {
 				ParseModel:                "gpt-4o-mini",
 				TranscribeModel:           "gpt-transcribe",
 				AITimeout:                 90 * time.Second,
-				RevenueCatAPIBaseURL:      "https://api.revenuecat.com/v1",
 				RevenueCatEntitlementID:   "pro",
+				TrustedProxies:            defaultTrustedProxies(),
 			},
 		},
 		{
@@ -76,9 +78,8 @@ func TestLoad(t *testing.T) {
 				"TRANSCRIBE_MODEL":           "whisper-1",
 				"AI_TIMEOUT":                 "45s",
 				"REVENUECAT_WEBHOOK_SECRET":  "whsec",
-				"REVENUECAT_API_KEY":         "rc-key",
-				"REVENUECAT_API_BASE_URL":    "https://rc.test/v1/",
 				"REVENUECAT_ENTITLEMENT":     "premium",
+				"TRUSTED_PROXIES":            "10.0.0.0/8, 192.168.1.5",
 			}),
 			want: Config{
 				Env:                       "production",
@@ -99,9 +100,11 @@ func TestLoad(t *testing.T) {
 				TranscribeModel:           "whisper-1",
 				AITimeout:                 45 * time.Second,
 				RevenueCatWebhookSecret:   "whsec",
-				RevenueCatAPIKey:          "rc-key",
-				RevenueCatAPIBaseURL:      "https://rc.test/v1",
 				RevenueCatEntitlementID:   "premium",
+				TrustedProxies: []netip.Prefix{
+					netip.MustParsePrefix("10.0.0.0/8"),
+					netip.MustParsePrefix("192.168.1.5/32"),
+				},
 			},
 		},
 		{
@@ -124,8 +127,8 @@ func TestLoad(t *testing.T) {
 				ParseModel:                "gpt-4o-mini",
 				TranscribeModel:           "gpt-transcribe",
 				AITimeout:                 90 * time.Second,
-				RevenueCatAPIBaseURL:      "https://api.revenuecat.com/v1",
 				RevenueCatEntitlementID:   "pro",
+				TrustedProxies:            defaultTrustedProxies(),
 			},
 		},
 		{
@@ -184,6 +187,11 @@ func TestLoad(t *testing.T) {
 			wantErr: "HTTP_ADDR must not be empty",
 		},
 		{
+			name:    "invalid trusted proxies",
+			env:     withRequired(map[string]string{"TRUSTED_PROXIES": "not-an-ip"}),
+			wantErr: "TRUSTED_PROXIES",
+		},
+		{
 			name: "multiple errors are joined",
 			env: withRequired(map[string]string{
 				"APP_ENV":   "staging",
@@ -213,7 +221,7 @@ func TestLoad(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got != tt.want {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("got %+v, want %+v", got, tt.want)
 			}
 		})

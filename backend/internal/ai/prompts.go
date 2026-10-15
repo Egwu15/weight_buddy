@@ -7,13 +7,21 @@ import (
 )
 
 // ParseSystemPrompt returns the meal/exercise parsing system prompt with the
-// current local time, which the model uses to classify meals.
+// server's local time. Prefer ParseSystemPromptText with the user's device
+// time, which is what actually determines breakfast vs dinner.
 func ParseSystemPrompt(now time.Time) string {
+	return ParseSystemPromptText(now.Format("15:04"))
+}
+
+// ParseSystemPromptText returns the parsing system prompt for a caller-supplied
+// local wall clock (HH:MM), so meal classification uses the user's timezone
+// rather than the server's.
+func ParseSystemPromptText(hhmm string) string {
 	return fmt.Sprintf(
 		"The current local time is %s. Use it to classify each food "+
 			"entry as breakfast, lunch, dinner or snack (a snack is something "+
 			"small eaten between meals). Exercises have no meal type (null). %s",
-		now.Format("15:04"), parseSystemPromptBody)
+		hhmm, parseSystemPromptBody)
 }
 
 const parseSystemPromptBody = `

@@ -2,6 +2,7 @@ package limits
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -14,6 +15,17 @@ func newFakeStore() *fakeStore { return &fakeStore{usage: map[string]float64{}} 
 
 func (f *fakeStore) UsageToday(_ context.Context, userID, kind string) (float64, error) {
 	return f.usage[userID+"|"+kind], nil
+}
+
+func (f *fakeStore) UsageTodayByKind(_ context.Context, userID string) (map[string]float64, error) {
+	out := map[string]float64{}
+	prefix := userID + "|"
+	for key, value := range f.usage {
+		if strings.HasPrefix(key, prefix) {
+			out[strings.TrimPrefix(key, prefix)] = value
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeStore) RecordUsage(_ context.Context, userID, kind string, units, cost float64) error {

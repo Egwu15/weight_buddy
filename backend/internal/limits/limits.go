@@ -98,6 +98,7 @@ type KindUsage struct {
 // to record usage, and the global daily spend.
 type Store interface {
 	UsageToday(ctx context.Context, userID, kind string) (float64, error)
+	UsageTodayByKind(ctx context.Context, userID string) (map[string]float64, error)
 	RecordUsage(ctx context.Context, userID, kind string, units, cost float64) error
 	DailySpend(ctx context.Context) (float64, error)
 }
@@ -174,20 +175,21 @@ func (e *Enforcer) Remaining(ctx context.Context, userID string, paid bool) ([]K
 	sort.Slice(kinds, func(i, j int) bool { return kinds[i] < kinds[j] })
 
 	out := make([]KindUsage, 0, len(kinds))
+	used, err := e.Store.UsageTodayByKind(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	for _, k := range kinds {
 		limit := tier.Limit(k)
-		used, err := e.Store.UsageToday(ctx, userID, string(k))
-		if err != nil {
-			return nil, err
-		}
-		remaining := limit - int(used)
+		spent := int(used[string(k)])
+		remaining := limit - spent
 		if remaining < 0 {
 			remaining = 0
 		}
 		out = append(out, KindUsage{
 			Kind:      string(k),
 			Limit:     limit,
-			Used:      int(used),
+			Used:      spent,
 			Remaining: remaining,
 		})
 	}

@@ -37,17 +37,23 @@ func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 
 // allow records one hit and reports whether the key is within its limit. It
 // also returns how long until the window resets, for a Retry-After header.
+//
+// The bucket map is bounded: when it is at capacity it is swept of expired
+// buckets, and if it is still full a key it has never seen is refused rather
+// than allowed to grow the map without limit under key spraying.
 func (l *rateLimiter) allow(key string) (bool, time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	now := l.now()
-	if len(l.buckets) > maxTrackedKeys {
+	b, known := l.buckets[key]
+	if !known && len(l.buckets) >= maxTrackedKeys {
 		l.sweep(now)
+		if len(l.buckets) >= maxTrackedKeys {
+			return false, l.window
+		}
 	}
-
-	b, ok := l.buckets[key]
-	if !ok || !now.Before(b.reset) {
+	if !known || !now.Before(b.reset) {
 		b = &bucket{reset: now.Add(l.window)}
 		l.buckets[key] = b
 	}
@@ -71,7 +77,7 @@ func (l *rateLimiter) sweep(now time.Time) {
 func (d Deps) rateLimitByIP(limiter *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if allowed, retryAfter := limiter.allow(clientIP(r)); !allowed {
+			if allowed, retryAfter := limiter.allow(clientIP(r, d.TrustedProxies)); !allowed {
 				d.rateLimited(w, retryAfter)
 				return
 			}

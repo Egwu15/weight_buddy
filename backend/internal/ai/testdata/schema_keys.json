@@ -1,0 +1,55 @@
+{
+  "parse": [
+    "entry_type",
+    "summary",
+    "meal_type",
+    "items",
+    "total_calories",
+    "total_protein_g",
+    "total_carbs_g",
+    "total_fat_g",
+    "activity",
+    "duration_minutes",
+    "estimated_calories_burned",
+    "exercises"
+  ],
+  "parse_item": [
+    "name",
+    "quantity",
+    "calories",
+    "protein_g",
+    "carbs_g",
+    "fat_g"
+  ],
+  "parse_exercise_item": [
+    "name",
+    "sets",
+    "reps",
+    "duration_minutes",
+    "estimated_calories_burned"
+  ],
+  "memory": [
+    "memories"
+  ],
+  "memory_item": [
+    "topic",
+    "content",
+    "category",
+    "action"
+  ],
+  "exercise": [
+    "has_exercise_advice",
+    "recommendations"
+  ],
+  "exercise_item": [
+    "name",
+    "description",
+    "muscle_groups",
+    "difficulty",
+    "plan_name",
+    "sets",
+    "reps",
+    "rest_seconds",
+    "duration_minutes"
+  ]
+}

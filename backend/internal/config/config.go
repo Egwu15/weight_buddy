@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -34,7 +35,6 @@ const (
 	defaultTranscribeModel = "gpt-transcribe"
 	defaultOpenAIBaseURL   = "https://api.openai.com/v1"
 
-	defaultRevenueCatBaseURL   = "https://api.revenuecat.com/v1"
 	defaultRevenueCatEntitleID = "pro"
 )
 
@@ -63,6 +63,10 @@ type Config struct {
 	// Rate limits are requests per minute, per IP and per authenticated user.
 	RateLimitPerIPPerMinute   int
 	RateLimitPerUserPerMinute int
+	// TrustedProxies are the networks whose X-Forwarded-For headers the
+	// service trusts when resolving the client IP (Caddy on loopback by
+	// default). Without this, a client could spoof its address.
+	TrustedProxies []netip.Prefix
 	// DailySpendCapUSD is the global AI spend cap; once today's estimate
 	// reaches it the proxy returns a friendly 503.
 	DailySpendCapUSD float64
@@ -77,8 +81,6 @@ type Config struct {
 
 	// RevenueCat settings. The webhook secret is compared in constant time.
 	RevenueCatWebhookSecret string
-	RevenueCatAPIKey        string
-	RevenueCatAPIBaseURL    string
 	RevenueCatEntitlementID string
 }
 
@@ -175,6 +177,13 @@ func load(lookup envLookup) (Config, error) {
 		cfg.DailySpendCapUSD = n
 	}
 
+	trusted, err := parseTrustedProxies(lookup)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		cfg.TrustedProxies = trusted
+	}
+
 	cfg.OpenAIAPIKey = getEnv(lookup, "OPENAI_API_KEY", "")
 	cfg.OpenAIBaseURL = strings.TrimRight(getEnv(lookup, "OPENAI_BASE_URL", defaultOpenAIBaseURL), "/")
 	cfg.ParseModel = getEnv(lookup, "PARSE_MODEL", defaultParseModel)
@@ -187,8 +196,6 @@ func load(lookup envLookup) (Config, error) {
 	}
 
 	cfg.RevenueCatWebhookSecret = getEnv(lookup, "REVENUECAT_WEBHOOK_SECRET", "")
-	cfg.RevenueCatAPIKey = getEnv(lookup, "REVENUECAT_API_KEY", "")
-	cfg.RevenueCatAPIBaseURL = strings.TrimRight(getEnv(lookup, "REVENUECAT_API_BASE_URL", defaultRevenueCatBaseURL), "/")
 	cfg.RevenueCatEntitlementID = getEnv(lookup, "REVENUECAT_ENTITLEMENT", defaultRevenueCatEntitleID)
 
 	if len(errs) > 0 {
@@ -250,6 +257,47 @@ func parsePositiveFloat(lookup envLookup, key string, fallback float64) (float64
 		return fallback, fmt.Errorf("%s must be positive, got %q", key, raw)
 	}
 	return f, nil
+}
+
+// defaultTrustedProxies is the loopback set, matching Caddy running on the
+// same host.
+func defaultTrustedProxies() []netip.Prefix {
+	return []netip.Prefix{
+		netip.MustParsePrefix("127.0.0.1/32"),
+		netip.MustParsePrefix("::1/128"),
+	}
+}
+
+// parseTrustedProxies reads TRUSTED_PROXIES: a comma-separated list of CIDRs or
+// bare IPs whose forwarded headers are trusted. Unset means loopback; the
+// literal "none" means trust nothing.
+func parseTrustedProxies(lookup envLookup) ([]netip.Prefix, error) {
+	raw, ok := lookup("TRUSTED_PROXIES")
+	if !ok || strings.TrimSpace(raw) == "" {
+		return defaultTrustedProxies(), nil
+	}
+	if strings.EqualFold(strings.TrimSpace(raw), "none") {
+		return nil, nil
+	}
+
+	var prefixes []netip.Prefix
+	for _, part := range strings.Split(raw, ",") {
+		token := strings.TrimSpace(part)
+		if token == "" {
+			continue
+		}
+		if prefix, err := netip.ParsePrefix(token); err == nil {
+			prefixes = append(prefixes, prefix.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(token)
+		if err != nil {
+			return nil, fmt.Errorf("TRUSTED_PROXIES entry %q is not an IP or CIDR", token)
+		}
+		unmapped := addr.Unmap()
+		prefixes = append(prefixes, netip.PrefixFrom(unmapped, unmapped.BitLen()))
+	}
+	return prefixes, nil
 }
 
 func parseLogLevel(raw string) (slog.Level, error) {

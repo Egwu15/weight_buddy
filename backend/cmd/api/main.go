@@ -80,6 +80,7 @@ func run() error {
 		Provider:                  provider,
 		RateLimitPerIPPerMinute:   cfg.RateLimitPerIPPerMinute,
 		RateLimitPerUserPerMinute: cfg.RateLimitPerUserPerMinute,
+		TrustedProxies:            cfg.TrustedProxies,
 	})
 	srv := httpapi.NewServer(router, logger)
 

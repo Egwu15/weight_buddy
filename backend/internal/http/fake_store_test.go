@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/tedif/weight-buddy-backend/internal/store"
@@ -16,7 +17,6 @@ type fakeStore struct {
 	events        map[string]bool
 	usage         map[string]float64 // userID + "|" + kind
 	spend         float64
-	signupErr     error
 	createErr     error
 	nextIDCounter int
 }
@@ -60,12 +60,24 @@ func (f *fakeStore) CreateOrGetUser(_ context.Context, installID string) (store.
 	return u, true, nil
 }
 
-func (f *fakeStore) RegisterSignup(_ context.Context, ipHash string, cap int) (bool, error) {
-	if f.signupErr != nil {
-		return false, f.signupErr
+func (f *fakeStore) CreateUserIfAllowed(_ context.Context, installID, ipHash string, cap int) (store.User, bool, bool, error) {
+	if f.createErr != nil {
+		return store.User{}, false, false, f.createErr
+	}
+	if u, ok := f.users[installID]; ok {
+		// Known device: sign in without touching the cap.
+		return u, false, true, nil
 	}
 	f.signups[ipHash]++
-	return f.signups[ipHash] <= cap, nil
+	if f.signups[ipHash] > cap {
+		// Mirror the real transaction rollback: no user, no counter bump.
+		f.signups[ipHash]--
+		return store.User{}, false, false, nil
+	}
+	f.nextIDCounter++
+	u := store.User{ID: "user-" + installID, InstallID: installID, CreatedAt: time.Now()}
+	f.users[installID] = u
+	return u, true, true, nil
 }
 
 func (f *fakeStore) Entitlement(_ context.Context, userID string) (store.Entitlement, error) {
@@ -73,11 +85,6 @@ func (f *fakeStore) Entitlement(_ context.Context, userID string) (store.Entitle
 		return e, nil
 	}
 	return store.Entitlement{}, store.ErrNotFound
-}
-
-func (f *fakeStore) UpsertEntitlement(_ context.Context, e store.Entitlement) error {
-	f.entitlements[e.UserID] = e
-	return nil
 }
 
 func (f *fakeStore) RecordRevenueCatEvent(_ context.Context, eventID string, _ []byte) (bool, error) {
@@ -88,8 +95,28 @@ func (f *fakeStore) RecordRevenueCatEvent(_ context.Context, eventID string, _ [
 	return true, nil
 }
 
+func (f *fakeStore) ApplyEntitlementEvent(_ context.Context, eventID string, _ []byte, e store.Entitlement) (bool, error) {
+	if f.events[eventID] {
+		return false, nil
+	}
+	f.events[eventID] = true
+	f.entitlements[e.UserID] = e
+	return true, nil
+}
+
 func (f *fakeStore) UsageToday(_ context.Context, userID, kind string) (float64, error) {
 	return f.usage[userID+"|"+kind], nil
+}
+
+func (f *fakeStore) UsageTodayByKind(_ context.Context, userID string) (map[string]float64, error) {
+	out := map[string]float64{}
+	prefix := userID + "|"
+	for key, value := range f.usage {
+		if strings.HasPrefix(key, prefix) {
+			out[strings.TrimPrefix(key, prefix)] = value
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeStore) RecordUsage(_ context.Context, userID, kind string, units, cost float64) error {

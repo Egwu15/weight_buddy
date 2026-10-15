@@ -24,7 +24,7 @@ func testProvider(t *testing.T, handler http.HandlerFunc) (*OpenAIProvider, *htt
 }
 
 func TestOpenAITranscribe(t *testing.T) {
-	var contentLength int64
+	var gotPrompt string
 	p, _ := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/audio/transcriptions" {
 			t.Errorf("path = %q", r.URL.Path)
@@ -38,7 +38,7 @@ func TestOpenAITranscribe(t *testing.T) {
 		if _, _, err := r.FormFile("file"); err != nil {
 			t.Errorf("missing file field: %v", err)
 		}
-		contentLength = r.ContentLength
+		gotPrompt = r.FormValue("prompt")
 		_ = json.NewEncoder(w).Encode(map[string]string{"text": "hello world"})
 	})
 
@@ -53,8 +53,8 @@ func TestOpenAITranscribe(t *testing.T) {
 	if got != "hello world" {
 		t.Fatalf("text = %q", got)
 	}
-	if contentLength <= 0 {
-		t.Fatal("expected a request body")
+	if gotPrompt != "Jollof" {
+		t.Fatalf("prompt = %q, want Jollof", gotPrompt)
 	}
 }
 

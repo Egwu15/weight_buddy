@@ -64,29 +64,20 @@ func (p *OpenAIProvider) Transcribe(ctx context.Context, req TranscribeRequest) 
 		filename = "audio.m4a"
 	}
 
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	if err := mw.WriteField("model", model); err != nil {
-		return "", fmt.Errorf("build transcription request: %w", err)
-	}
-	if req.Prompt != "" {
-		if err := mw.WriteField("prompt", req.Prompt); err != nil {
-			return "", fmt.Errorf("build transcription request: %w", err)
+	// Stream the multipart body instead of buffering it: the audio bytes are
+	// already in memory, and a bytes.Buffer would hold a second copy of them.
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		if err := writeTranscription(mw, model, filename, req.Prompt, req.Audio); err != nil {
+			_ = pw.CloseWithError(err)
+			return
 		}
-	}
-	part, err := mw.CreateFormFile("file", filename)
-	if err != nil {
-		return "", fmt.Errorf("build transcription request: %w", err)
-	}
-	if _, err := part.Write(req.Audio); err != nil {
-		return "", fmt.Errorf("build transcription request: %w", err)
-	}
-	if err := mw.Close(); err != nil {
-		return "", fmt.Errorf("build transcription request: %w", err)
-	}
+		_ = pw.Close()
+	}()
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		p.cfg.BaseURL+"/audio/transcriptions", &buf)
+		p.cfg.BaseURL+"/audio/transcriptions", pr)
 	if err != nil {
 		return "", fmt.Errorf("build transcription request: %w", err)
 	}
@@ -104,6 +95,27 @@ func (p *OpenAIProvider) Transcribe(ctx context.Context, req TranscribeRequest) 
 		return "", fmt.Errorf("decode transcription response: %w", err)
 	}
 	return out.Text, nil
+}
+
+// writeTranscription writes the multipart fields and closes the writer. It runs
+// in a goroutine feeding the request body pipe.
+func writeTranscription(mw *multipart.Writer, model, filename, prompt string, audio []byte) error {
+	if err := mw.WriteField("model", model); err != nil {
+		return fmt.Errorf("build transcription request: %w", err)
+	}
+	if prompt != "" {
+		if err := mw.WriteField("prompt", prompt); err != nil {
+			return fmt.Errorf("build transcription request: %w", err)
+		}
+	}
+	part, err := mw.CreateFormFile("file", filename)
+	if err != nil {
+		return fmt.Errorf("build transcription request: %w", err)
+	}
+	if _, err := part.Write(audio); err != nil {
+		return fmt.Errorf("build transcription request: %w", err)
+	}
+	return mw.Close()
 }
 
 // Structured runs a chat completion constrained to a JSON schema and returns

@@ -220,16 +220,129 @@ func (s *Store) DailySpend(ctx context.Context) (float64, error) {
 	return total, nil
 }
 
-// RegisterSignup increments today's signup counter for a device and reports
-// whether the count is still within the cap.
-func (s *Store) RegisterSignup(ctx context.Context, ipHash string, cap int) (bool, error) {
+// UsageTodayByKind sums today's units for a user, keyed by kind, in a single
+// query so a per-kind remaining-limits view does not fan out into N queries.
+func (s *Store) UsageTodayByKind(ctx context.Context, userID string) (map[string]float64, error) {
 	const q = `
-INSERT INTO device_signups (ip_hash, day, count) VALUES ($1, current_date, 1)
-ON CONFLICT (ip_hash, day) DO UPDATE SET count = device_signups.count + 1
-RETURNING count`
-	var count int
-	if err := s.pool.QueryRow(ctx, q, ipHash).Scan(&count); err != nil {
-		return false, fmt.Errorf("register signup: %w", err)
+SELECT kind, SUM(units) FROM usage
+WHERE user_id = $1::uuid AND created_at >= current_date
+GROUP BY kind`
+	rows, err := s.pool.Query(ctx, q, userID)
+	if err != nil {
+		return nil, fmt.Errorf("sum usage by kind: %w", err)
 	}
-	return count <= cap, nil
+	defer rows.Close()
+
+	out := make(map[string]float64)
+	for rows.Next() {
+		var (
+			kind  string
+			total float64
+		)
+		if err := rows.Scan(&kind, &total); err != nil {
+			return nil, fmt.Errorf("scan usage by kind: %w", err)
+		}
+		out[kind] = total
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read usage by kind: %w", err)
+	}
+	return out, nil
+}
+
+// CreateUserIfAllowed returns the account for installID, creating it on first
+// sight, and enforces the per-device free-account cap without ever burning the
+// allowance for a device that ends up with no account.
+//
+// For an existing device it returns the account and does not touch the cap.
+// For a new device the insert, the signup counter increment and the cap check
+// share one transaction: when the cap is exceeded the whole transaction rolls
+// back, so a rejected or failed creation leaves no user and no counter bump. A
+// retry after a transient failure therefore still succeeds. The boolean
+// reports whether a new account was created; allowed reports whether the
+// caller may hand out a session for it.
+func (s *Store) CreateUserIfAllowed(ctx context.Context, installID, ipHash string, cap int) (user User, created, allowed bool, err error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return User{}, false, false, fmt.Errorf("begin signup tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	row := tx.QueryRow(ctx,
+		`INSERT INTO users (install_id) VALUES ($1)
+		 ON CONFLICT (install_id) DO NOTHING
+		 RETURNING id::text, install_id, created_at`, installID)
+	if scanErr := row.Scan(&user.ID, &user.InstallID, &user.CreatedAt); scanErr != nil {
+		if !errors.Is(scanErr, pgx.ErrNoRows) {
+			return User{}, false, false, fmt.Errorf("create user: %w", scanErr)
+		}
+		// The device already has an account: sign in without counting.
+		if err := tx.QueryRow(ctx,
+			`SELECT id::text, install_id, created_at FROM users WHERE install_id = $1`, installID).
+			Scan(&user.ID, &user.InstallID, &user.CreatedAt); err != nil {
+			return User{}, false, false, fmt.Errorf("load existing user: %w", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return User{}, false, false, fmt.Errorf("commit signup tx: %w", err)
+		}
+		return user, false, true, nil
+	}
+
+	// A brand-new account: count it, and roll back entirely if over the cap.
+	var count int
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO device_signups (ip_hash, day, count) VALUES ($1, current_date, 1)
+		 ON CONFLICT (ip_hash, day) DO UPDATE SET count = device_signups.count + 1
+		 RETURNING count`, ipHash).Scan(&count); err != nil {
+		return User{}, false, false, fmt.Errorf("count signup: %w", err)
+	}
+	if count > cap {
+		// Rolled back by the deferred Rollback: no user, no counter bump.
+		return User{}, false, false, nil
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return User{}, false, false, fmt.Errorf("commit signup tx: %w", err)
+	}
+	return user, true, true, nil
+}
+
+// ApplyEntitlementEvent records a RevenueCat event and applies its entitlement
+// change in one transaction. It reports whether the event was newly applied;
+// false means it was a duplicate that was already processed. Recording and
+// applying together means a failure rolls both back, so a retry re-applies
+// instead of being dismissed as a duplicate.
+func (s *Store) ApplyEntitlementEvent(ctx context.Context, eventID string, payload []byte, e Entitlement) (bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("begin entitlement tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx,
+		`INSERT INTO revenuecat_events (event_id, payload) VALUES ($1, $2) ON CONFLICT (event_id) DO NOTHING`,
+		eventID, payload)
+	if err != nil {
+		return false, fmt.Errorf("record revenuecat event: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Already applied by an earlier delivery.
+		return false, nil
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO entitlements (user_id, entitlement, status, expires_at, updated_at)
+		 VALUES ($1::uuid, $2, $3, $4, now())
+		 ON CONFLICT (user_id) DO UPDATE SET
+		     entitlement = EXCLUDED.entitlement,
+		     status = EXCLUDED.status,
+		     expires_at = EXCLUDED.expires_at,
+		     updated_at = now()`,
+		e.UserID, e.Entitlement, e.Status, e.ExpiresAt); err != nil {
+		return false, fmt.Errorf("upsert entitlement: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit entitlement tx: %w", err)
+	}
+	return true, nil
 }

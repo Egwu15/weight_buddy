@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -52,6 +53,10 @@ type Deps struct {
 	// rates. Zero disables the corresponding limiter.
 	RateLimitPerIPPerMinute   int
 	RateLimitPerUserPerMinute int
+
+	// TrustedProxies are the networks whose X-Forwarded-For headers the
+	// client-IP resolution may trust (Caddy on loopback by default).
+	TrustedProxies []netip.Prefix
 }
 
 // NewRouter builds the application router with all routes registered.

@@ -51,21 +51,15 @@ func (d Deps) handleRevenueCatWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	inserted, err := d.Store.RecordRevenueCatEvent(ctx, payload.Event.ID, body)
-	if err != nil {
-		d.serverError(w, r, err)
-		return
-	}
-	if !inserted {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "duplicate"})
-		return
-	}
-
 	user, err := d.resolveWebhookUser(ctx, payload.Event)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			// An event for a subscriber we do not know: acknowledge so
-			// RevenueCat stops retrying, and move on.
+			// An event for a subscriber we do not know: record it so we do not
+			// reprocess it, acknowledge, and move on.
+			if _, recErr := d.Store.RecordRevenueCatEvent(ctx, payload.Event.ID, body); recErr != nil {
+				d.serverError(w, r, recErr)
+				return
+			}
 			writeJSON(w, http.StatusOK, map[string]string{"status": "unknown_user"})
 			return
 		}
@@ -75,17 +69,31 @@ func (d Deps) handleRevenueCatWebhook(w http.ResponseWriter, r *http.Request) {
 
 	state, changed := entitlements.Decide(payload.Event, d.RevenueCatEntitlementID, time.Now())
 	if !changed {
+		// No entitlement change (e.g. TRANSFER): record it so a retry is a
+		// no-op, then acknowledge.
+		if _, err := d.Store.RecordRevenueCatEvent(ctx, payload.Event.ID, body); err != nil {
+			d.serverError(w, r, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
 		return
 	}
 
-	if err := d.Store.UpsertEntitlement(ctx, store.Entitlement{
+	// Record the event and apply the entitlement in one transaction, so a
+	// failure rolls both back and RevenueCat's retry re-applies rather than
+	// being dismissed as a duplicate.
+	applied, err := d.Store.ApplyEntitlementEvent(ctx, payload.Event.ID, body, store.Entitlement{
 		UserID:      user.ID,
 		Entitlement: state.Entitlement,
 		Status:      state.Status,
 		ExpiresAt:   state.ExpiresAt,
-	}); err != nil {
+	})
+	if err != nil {
 		d.serverError(w, r, err)
+		return
+	}
+	if !applied {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "duplicate"})
 		return
 	}
 

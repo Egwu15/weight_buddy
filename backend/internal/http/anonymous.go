@@ -1,11 +1,8 @@
 package httpapi
 
 import (
-	"errors"
 	"net/http"
 	"strings"
-
-	"github.com/tedif/weight-buddy-backend/internal/store"
 )
 
 const (
@@ -24,8 +21,9 @@ type anonymousResponse struct {
 
 // handleAnonymous signs a device in. The client sends a random install id and
 // gets back a user id and a session token; a device that has signed in before
-// keeps its account. Only the first sight of a device counts against the
-// per-device free-account cap.
+// keeps its account. Only a device's first sign-in counts against the
+// per-device free-account cap, and the account and the cap are applied in one
+// transaction so a rejected or failed signup leaves nothing behind.
 func (d Deps) handleAnonymous(w http.ResponseWriter, r *http.Request) {
 	var req anonymousRequest
 	if err := decodeJSON(w, r, &req); err != nil {
@@ -40,28 +38,15 @@ func (d Deps) handleAnonymous(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	user, err := d.Store.UserByInstallID(ctx, installID)
-	switch {
-	case err == nil:
-		// Known device: sign in without touching the creation cap.
-	case errors.Is(err, store.ErrNotFound):
-		allowed, capErr := d.Store.RegisterSignup(ctx, hashIP(d.JWTSecret, clientIP(r)), d.FreeAccountsPerDevice)
-		if capErr != nil {
-			d.serverError(w, r, capErr)
-			return
-		}
-		if !allowed {
-			writeError(w, http.StatusTooManyRequests, "device_limit",
-				"This device has reached its free account limit. Try again tomorrow.")
-			return
-		}
-		user, _, err = d.Store.CreateOrGetUser(ctx, installID)
-		if err != nil {
-			d.serverError(w, r, err)
-			return
-		}
-	default:
+	ipHash := hashIP(d.JWTSecret, clientIP(r, d.TrustedProxies))
+	user, _, allowed, err := d.Store.CreateUserIfAllowed(ctx, installID, ipHash, d.FreeAccountsPerDevice)
+	if err != nil {
 		d.serverError(w, r, err)
+		return
+	}
+	if !allowed {
+		writeError(w, http.StatusTooManyRequests, "device_limit",
+			"This device has reached its free account limit. Try again tomorrow.")
 		return
 	}
 
