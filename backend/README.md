@@ -68,9 +68,13 @@ One static binary behind Caddy on the same host as Postgres.
 1. Build: `make build` (produces `bin/weight-buddy` and `bin/weight-buddy-migrate`).
 2. Copy both binaries and `deploy/weight-buddy.service` to the host.
 3. Create `/etc/weight-buddy/weight-buddy.env` from `.env.example` and
-   `chmod 600` it.
+   `chmod 600` it. Fill in the required values (`DATABASE_URL`, `JWT_SECRET`,
+   `GOOGLE_WEB_CLIENT_ID`, `SUPPORT_EMAIL`) **before** restarting: config is
+   validated at startup, so a missing variable crash-loops the service until
+   the file is fixed.
 4. `sudo systemctl enable --now weight-buddy` (migrations are applied by
-   `ExecStartPre`, which runs the migrate binary with the same environment).
+   `ExecStartPre`, which runs the migrate binary with the same environment,
+   before the new binary serves any request).
 5. Put `deploy/Caddyfile` in `/etc/caddy/Caddyfile`, then
    `sudo systemctl reload caddy`.
 

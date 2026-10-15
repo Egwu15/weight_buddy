@@ -15,6 +15,11 @@ import (
 // against it instead of leaking pgx's own sentinel upwards.
 var ErrNotFound = errors.New("store: not found")
 
+// ErrGoogleAccountConflict is returned when a Google sign-in cannot be settled
+// because the device's install id already belongs to a different Google
+// account. Callers surface it as a 409 so the user can sign out first.
+var ErrGoogleAccountConflict = errors.New("store: install id already linked to another google account")
+
 // Store is the Postgres persistence layer. All queries are hand-written; there
 // is no ORM.
 type Store struct {
@@ -392,11 +397,19 @@ func (s *Store) resolveGoogleConflict(ctx context.Context, sub, installID string
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return User{}, false, err
 	}
-	if err == nil && existing.GoogleSub == nil {
-		if u, updated, err := linkGoogleSub(ctx, s.pool, sub, existing.ID); err != nil {
-			return User{}, false, err
-		} else if updated {
-			return u, true, nil
+	if err == nil {
+		if existing.GoogleSub == nil {
+			if u, updated, err := linkGoogleSub(ctx, s.pool, sub, existing.ID); err != nil {
+				return User{}, false, err
+			} else if updated {
+				return u, true, nil
+			}
+		} else {
+			// The device's install id already belongs to a different Google
+			// account. This is not a race: it is a deliberate account switch
+			// that cannot be settled without an unlink, so report it as a
+			// conflict rather than an internal error.
+			return User{}, false, ErrGoogleAccountConflict
 		}
 	}
 
@@ -483,8 +496,9 @@ func isUniqueViolation(err error) bool {
 //
 // revenuecat_events is handled explicitly. The table has no user column or
 // foreign key, but each stored webhook payload names the app user id it was
-// about, so the rows for this user are matched on both the current and original
-// app user id and deleted. That leaves nothing in the table pointing at the
+// about — directly, or through the alias and transfer lists RevenueCat also
+// uses to refer to a subscriber — so the rows for this user are matched on all
+// of those fields and deleted. That leaves nothing in the table pointing at the
 // removed account; a later RevenueCat retry for the same subject is recorded
 // again and resolves to "unknown user", so idempotency is unaffected.
 func (s *Store) DeleteUser(ctx context.Context, userID string) (bool, error) {
@@ -503,7 +517,10 @@ func (s *Store) DeleteUser(ctx context.Context, userID string) (bool, error) {
 	if _, err := tx.Exec(ctx,
 		`DELETE FROM revenuecat_events
 		 WHERE payload->'event'->>'app_user_id' = $1
-		    OR payload->'event'->>'original_app_user_id' = $1`, userID); err != nil {
+		    OR payload->'event'->>'original_app_user_id' = $1
+		    OR payload->'event'->'aliases' ? $1
+		    OR payload->'event'->'transferred_from' ? $1
+		    OR payload->'event'->'transferred_to' ? $1`, userID); err != nil {
 		return false, fmt.Errorf("delete revenuecat events: %w", err)
 	}
 	tag, err := tx.Exec(ctx, `DELETE FROM users WHERE id = $1::uuid`, userID)

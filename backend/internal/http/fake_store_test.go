@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -108,7 +107,7 @@ func (f *fakeStore) GoogleSignIn(_ context.Context, sub, installID, linkUserID s
 	}
 	if existing, ok := f.users[installID]; ok {
 		if existing.GoogleSub != nil {
-			return store.User{}, false, fmt.Errorf("google sign-in conflict")
+			return store.User{}, false, store.ErrGoogleAccountConflict
 		}
 		linked := sub
 		existing.GoogleSub = &linked

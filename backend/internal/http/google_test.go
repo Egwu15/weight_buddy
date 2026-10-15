@@ -219,6 +219,32 @@ func TestGoogleSignInRejectsInvalidToken(t *testing.T) {
 	})
 }
 
+func TestGoogleSignInRejectsAccountSwitch(t *testing.T) {
+	fs := newFakeStore()
+	deps := googleDeps(fs, fakeVerifier{subs: map[string]string{
+		"account-a": "sub-a",
+		"account-b": "sub-b",
+	}})
+	router := NewRouter(deps)
+
+	// The device's install id becomes linked to Google account A.
+	first := postGoogle(t, router, `{"id_token":"account-a","install_id":"device-switch-01"}`, "")
+	if first.Code != http.StatusOK {
+		t.Fatalf("first sign-in = %d, want 200 (%s)", first.Code, first.Body.String())
+	}
+	token := decodeGoogleResponse(t, first).Token
+
+	// Signing in with account B on the same install id must be a clear 409,
+	// not a 500.
+	second := postGoogle(t, router, `{"id_token":"account-b","install_id":"device-switch-01"}`, "Bearer "+token)
+	if second.Code != http.StatusConflict {
+		t.Fatalf("account switch = %d, want 409 (%s)", second.Code, second.Body.String())
+	}
+	if code := errorCode(t, second); code != "account_conflict" {
+		t.Fatalf("code = %q, want account_conflict", code)
+	}
+}
+
 func TestGoogleSignInIgnoresInvalidAnonymousSession(t *testing.T) {
 	fs := newFakeStore()
 	deps := googleDeps(fs, fakeVerifier{subs: map[string]string{"good": "sub-z"}})

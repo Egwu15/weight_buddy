@@ -41,17 +41,10 @@ class SecureSettings {
   Future<void> writeVocabulary(String value) =>
       _storage.write(key: _keyVocabulary, value: value);
 
-  /// Removes the session credentials (user id, token and the Google-linked
-  /// flag) but keeps the install id and vocabulary, so the next anonymous
-  /// sign-in reuses the same device identity.
-  Future<void> clearIdentity() async {
-    await _storage.delete(key: _keyUserId);
-    await _storage.delete(key: _keyToken);
-    await _storage.delete(key: _keyGoogleLinked);
-  }
-
-  /// Removes only the session (install id, user id, token), keeping the user's
-  /// vocabulary. Used when a stored session is no longer valid.
+  /// Removes the session credentials (install id, user id, token and the
+  /// Google-linked flag) but keeps the vocabulary. Used to return to a fresh,
+  /// unlinked anonymous identity: reusing the install id would hand back the
+  /// same still-Google-linked account.
   Future<void> clearSession() async {
     await _storage.delete(key: _keyInstallId);
     await _storage.delete(key: _keyUserId);

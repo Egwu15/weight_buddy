@@ -243,25 +243,29 @@ void main() {
     expect(restored!.googleLinked, isTrue);
   });
 
-  test('clearIdentity keeps the install id and vocabulary', () async {
-    FlutterSecureStorage.setMockInitialValues({
-      'backend_install_id': 'install-1',
-      'backend_user_id': 'user-1',
-      'backend_token': _jwt(exp: 9999999999),
-      'backend_google_linked': 'true',
-      'custom_vocabulary': 'Jollof, Egusi',
-    });
+  test(
+    'clearSession drops the whole session and keeps the vocabulary',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'backend_install_id': 'install-1',
+        'backend_user_id': 'user-1',
+        'backend_token': _jwt(exp: 9999999999),
+        'backend_google_linked': 'true',
+        'custom_vocabulary': 'Jollof, Egusi',
+      });
 
-    await SecureSettings().clearIdentity();
+      await SecureSettings().clearSession();
 
-    final store = SecureSettings();
-    expect(await store.readToken(), isNull);
-    expect(await store.readUserId(), isNull);
-    expect(await store.readGoogleLinked(), isFalse);
-    // The device keeps its identity so the anonymous trial resumes in place.
-    expect(await store.readInstallId(), 'install-1');
-    expect(await store.readVocabulary(), 'Jollof, Egusi');
-  });
+      final store = SecureSettings();
+      expect(await store.readToken(), isNull);
+      expect(await store.readUserId(), isNull);
+      expect(await store.readGoogleLinked(), isFalse);
+      // The install id goes too: a fresh anonymous identity, not the old
+      // (still-Google-linked) account.
+      expect(await store.readInstallId(), isNull);
+      expect(await store.readVocabulary(), 'Jollof, Egusi');
+    },
+  );
 
   test('deleteAccount sends the session token and accepts 204', () async {
     final token = _jwt(exp: 9999999999);

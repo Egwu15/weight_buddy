@@ -24,18 +24,31 @@ func userFromContext(ctx context.Context) (store.User, bool) {
 	return u, ok
 }
 
+// bearerToken extracts a non-empty token from a "Bearer <token>" Authorization
+// header. All auth paths share it so header handling cannot drift between them.
+func bearerToken(r *http.Request) (string, bool) {
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok {
+		return "", false
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
 // requireAuth rejects any request without a valid bearer session token and
 // loads the account it names, so downstream handlers can trust the context.
 func (d Deps) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header := r.Header.Get("Authorization")
-		token, ok := strings.CutPrefix(header, "Bearer ")
-		if !ok || strings.TrimSpace(token) == "" {
+		token, ok := bearerToken(r)
+		if !ok {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Sign in first.")
 			return
 		}
 
-		userID, err := d.Tokens.Verify(strings.TrimSpace(token))
+		userID, err := d.Tokens.Verify(token)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Your session has expired. Sign in again.")
 			return
@@ -61,14 +74,13 @@ func (d Deps) requireAuth(next http.Handler) http.Handler {
 // rather than a 401. Handlers behind it must not assume a full account exists.
 func (d Deps) requireToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header := r.Header.Get("Authorization")
-		token, ok := strings.CutPrefix(header, "Bearer ")
-		if !ok || strings.TrimSpace(token) == "" {
+		token, ok := bearerToken(r)
+		if !ok {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Sign in first.")
 			return
 		}
 
-		userID, err := d.Tokens.Verify(strings.TrimSpace(token))
+		userID, err := d.Tokens.Verify(token)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Your session has expired. Sign in again.")
 			return

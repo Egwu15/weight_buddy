@@ -32,16 +32,12 @@ class AppSettings {
   const AppSettings({
     required this.token,
     required this.vocabulary,
-    this.userId = '',
     this.googleLinked = false,
   });
 
   /// The backend session token (empty until the device has signed in).
   final String token;
   final String vocabulary;
-
-  /// The backend user id the session belongs to (empty until signed in).
-  final String userId;
 
   /// Whether the session came from Google Sign-In.
   final bool googleLinked;
@@ -75,7 +71,6 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     AppSettings from(BackendSession? session) => AppSettings(
       token: session?.token ?? '',
       vocabulary: vocab,
-      userId: session?.userId ?? '',
       googleLinked: session?.googleLinked ?? false,
     );
 
@@ -101,7 +96,6 @@ class SettingsController extends AsyncNotifier<AppSettings> {
       AppSettings(
         token: current?.token ?? '',
         vocabulary: vocabulary.trim(),
-        userId: current?.userId ?? '',
         googleLinked: current?.googleLinked ?? false,
       ),
     );
@@ -120,7 +114,6 @@ class SettingsController extends AsyncNotifier<AppSettings> {
       return AppSettings(
         token: session.token,
         vocabulary: vocab,
-        userId: session.userId,
         googleLinked: session.googleLinked,
       );
     });
@@ -144,27 +137,23 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     await revenueCat.logIn(session.userId);
 
     state = AsyncData(
-      AppSettings(
-        token: session.token,
-        vocabulary: vocab,
-        userId: session.userId,
-        googleLinked: true,
-      ),
+      AppSettings(token: session.token, vocabulary: vocab, googleLinked: true),
     );
   }
 
-  /// Signs out of Google and returns the device to the anonymous trial. Clears
-  /// the session credentials and the RevenueCat user, then signs in anonymously
-  /// again on the same install id. A failed anonymous re-sign-in leaves the
-  /// device unconfigured (the account screen offers a retry) rather than
-  /// crashing.
+  /// Signs out of Google and returns the device to a fresh, unlinked anonymous
+  /// trial. The whole session (including the install id) is cleared first: the
+  /// install's backend account is still linked to Google — there is no unlink —
+  /// so reusing the install id would hand back that same account. A failed
+  /// anonymous re-sign-in leaves the device unconfigured (the account screen
+  /// offers a retry) rather than crashing.
   Future<void> signOut() async {
     final store = SecureSettings();
     final vocab = await store.readVocabulary() ?? '';
 
     await ref.read(googleIdentityProvider).signOut();
     await ref.read(revenueCatIdentityProvider).logOut();
-    await store.clearIdentity();
+    await store.clearSession();
 
     state = const AsyncLoading();
     try {
@@ -173,7 +162,6 @@ class SettingsController extends AsyncNotifier<AppSettings> {
         AppSettings(
           token: session.token,
           vocabulary: vocab,
-          userId: session.userId,
           googleLinked: false,
         ),
       );
@@ -209,13 +197,7 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     state = const AsyncLoading();
     try {
       final session = await BackendAuth(store: store).signIn();
-      state = AsyncData(
-        AppSettings(
-          token: session.token,
-          userId: session.userId,
-          vocabulary: '',
-        ),
-      );
+      state = AsyncData(AppSettings(token: session.token, vocabulary: ''));
     } catch (_) {
       state = const AsyncData(AppSettings(token: '', vocabulary: ''));
     }

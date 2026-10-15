@@ -1,8 +1,11 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/tedif/weight-buddy-backend/internal/store"
 )
 
 type googleRequest struct {
@@ -61,6 +64,11 @@ func (d Deps) handleGoogle(w http.ResponseWriter, r *http.Request) {
 
 	user, linked, err := d.Store.GoogleSignIn(r.Context(), sub, installID, linkUserID)
 	if err != nil {
+		if errors.Is(err, store.ErrGoogleAccountConflict) {
+			writeError(w, http.StatusConflict, "account_conflict",
+				"This device is already signed in with a different Google account. Sign out first, then try again.")
+			return
+		}
 		d.serverError(w, r, err)
 		return
 	}
@@ -80,12 +88,11 @@ func (d Deps) handleGoogle(w http.ResponseWriter, r *http.Request) {
 // malformed or expired session is ignored (returns "") rather than failing the
 // Google sign-in.
 func (d Deps) anonymousSessionUser(r *http.Request) string {
-	header := r.Header.Get("Authorization")
-	token, ok := strings.CutPrefix(header, "Bearer ")
-	if !ok || strings.TrimSpace(token) == "" {
+	token, ok := bearerToken(r)
+	if !ok {
 		return ""
 	}
-	userID, err := d.Tokens.Verify(strings.TrimSpace(token))
+	userID, err := d.Tokens.Verify(token)
 	if err != nil {
 		return ""
 	}

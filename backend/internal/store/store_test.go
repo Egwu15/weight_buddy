@@ -446,6 +446,11 @@ func TestDeleteUserRemovesAllRowsAndIsIdempotent(t *testing.T) {
 	if _, err := s.RecordRevenueCatEvent(ctx, "evt-del", event); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
+	// An event that references the user only through an alias must go too.
+	aliasEvent := []byte(`{"api_version":"1.0","event":{"id":"evt-alias","type":"TRANSFER","aliases":["` + user.ID + `"]}}`)
+	if _, err := s.RecordRevenueCatEvent(ctx, "evt-alias", aliasEvent); err != nil {
+		t.Fatalf("record alias event: %v", err)
+	}
 
 	deleted, err := s.DeleteUser(ctx, user.ID)
 	if err != nil {
@@ -469,11 +474,11 @@ func TestDeleteUserRemovesAllRowsAndIsIdempotent(t *testing.T) {
 		t.Fatalf("usage still present: %v", units)
 	}
 	var events int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM revenuecat_events WHERE event_id = 'evt-del'`).Scan(&events); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM revenuecat_events WHERE event_id IN ('evt-del', 'evt-alias')`).Scan(&events); err != nil {
 		t.Fatalf("count events: %v", err)
 	}
 	if events != 0 {
-		t.Fatalf("revenuecat event still present: %d", events)
+		t.Fatalf("revenuecat events still present: %d", events)
 	}
 
 	// A second delete is a no-op, not an error.
