@@ -10,8 +10,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/tedif/weight-buddy-backend/internal/ai"
+	"github.com/tedif/weight-buddy-backend/internal/auth"
 	"github.com/tedif/weight-buddy-backend/internal/config"
 	httpapi "github.com/tedif/weight-buddy-backend/internal/http"
+	"github.com/tedif/weight-buddy-backend/internal/limits"
+	"github.com/tedif/weight-buddy-backend/internal/store"
 )
 
 func main() {
@@ -38,19 +42,64 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	db, err := store.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if cfg.OpenAIAPIKey == "" {
+		logger.Warn("OPENAI_API_KEY is not set; AI routes will return 503")
+	}
+	if cfg.RevenueCatWebhookSecret == "" {
+		logger.Warn("REVENUECAT_WEBHOOK_SECRET is not set; the webhook route will return 503")
+	}
+
+	provider := newProvider(cfg)
+	enforcer := &limits.Enforcer{
+		Store:    db,
+		Config:   limits.Default(),
+		SpendCap: cfg.DailySpendCapUSD,
+	}
+
 	ln, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.HTTPAddr, err)
 	}
 
 	router := httpapi.NewRouter(httpapi.Deps{
-		Logger:         logger,
-		RequestTimeout: cfg.RequestTimeout,
+		Logger:                    logger,
+		RequestTimeout:            cfg.RequestTimeout,
+		Store:                     db,
+		Tokens:                    auth.NewTokens(cfg.JWTSecret, cfg.JWTTTL),
+		JWTSecret:                 cfg.JWTSecret,
+		FreeAccountsPerDevice:     cfg.FreeAccountsPerDevice,
+		RevenueCatWebhookSecret:   cfg.RevenueCatWebhookSecret,
+		RevenueCatEntitlementID:   cfg.RevenueCatEntitlementID,
+		Limits:                    enforcer,
+		Provider:                  provider,
+		RateLimitPerIPPerMinute:   cfg.RateLimitPerIPPerMinute,
+		RateLimitPerUserPerMinute: cfg.RateLimitPerUserPerMinute,
 	})
 	srv := httpapi.NewServer(router, logger)
 
 	logger.Info("starting api", "env", cfg.Env, "addr", ln.Addr().String())
 	return httpapi.Run(ctx, srv, ln, logger, cfg.ShutdownTimeout)
+}
+
+// newProvider builds the AI provider, or returns nil when no key is configured
+// so the AI routes answer 503 instead of failing every call at the provider.
+func newProvider(cfg config.Config) ai.Provider {
+	if cfg.OpenAIAPIKey == "" {
+		return nil
+	}
+	return ai.NewOpenAIProvider(ai.OpenAIConfig{
+		APIKey:          cfg.OpenAIAPIKey,
+		BaseURL:         cfg.OpenAIBaseURL,
+		ParseModel:      cfg.ParseModel,
+		TranscribeModel: cfg.TranscribeModel,
+		Timeout:         cfg.AITimeout,
+	})
 }
 
 func newLogger(cfg config.Config) *slog.Logger {
