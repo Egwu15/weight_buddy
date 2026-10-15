@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -40,7 +41,11 @@ class BackendAuth {
   final String _baseUrl;
   final SecureSettings _store;
 
-  /// Returns the stored session, or null when this device has never signed in.
+  static const _timeout = Duration(seconds: 15);
+
+  /// Returns the stored session, or null when this device has never signed in
+  /// or the stored token has already expired (in which case the stale session
+  /// is cleared so the caller re-signs in rather than repeatedly getting 401s).
   Future<BackendSession?> restore() async {
     final token = await _store.readToken();
     final userId = await _store.readUserId();
@@ -53,6 +58,10 @@ class BackendAuth {
         installId.isEmpty) {
       return null;
     }
+    if (_isExpired(token)) {
+      await _store.clearSession();
+      return null;
+    }
     return BackendSession(userId: userId, installId: installId, token: token);
   }
 
@@ -62,11 +71,16 @@ class BackendAuth {
     final installId = await _ensureInstallId();
     final http.Response response;
     try {
-      response = await _client.post(
-        Uri.parse('$_baseUrl/v1/auth/anonymous'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'install_id': installId}),
-      );
+      response = await _client
+          .post(
+            Uri.parse('$_baseUrl/v1/auth/anonymous'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'install_id': installId}),
+          )
+          .timeout(_timeout);
+    } on TimeoutException {
+      throw const BackendAuthException(
+          'Weight Buddy took too long to respond. Try again.');
     } catch (_) {
       throw const BackendAuthException(
           'Could not reach Weight Buddy. Check your connection and try again.');
@@ -88,8 +102,27 @@ class BackendAuth {
     return BackendSession(userId: userId, installId: installId, token: token);
   }
 
-  /// Clears the stored session, so the next sign-in creates a fresh identity.
-  Future<void> signOut() => _store.clear();
+  /// Clears the stored session (keeping the vocabulary) so the next sign-in
+  /// creates a fresh identity. Used to recover from a rejected token.
+  Future<void> clearSession() => _store.clearSession();
+
+  /// Decodes a JWT's expiry without verifying it. A token we cannot parse is
+  /// treated as usable, so this is only a fast path to avoid a known-401 call.
+  static bool _isExpired(String token) {
+    final parts = token.split('.');
+    if (parts.length != 3) return false;
+    try {
+      final normalized = base64Url.normalize(parts[1]);
+      final payload = jsonDecode(utf8.decode(base64Url.decode(normalized)))
+          as Map<String, dynamic>;
+      final exp = payload['exp'];
+      if (exp is! int) return false;
+      final expiry = DateTime.fromMillisecondsSinceEpoch(exp * 1000, isUtc: true);
+      return expiry.isBefore(DateTime.now().toUtc());
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<String> _ensureInstallId() async {
     final existing = await _store.readInstallId();

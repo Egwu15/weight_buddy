@@ -27,17 +27,10 @@ final databaseProvider = FutureProvider<AppDatabase>(
 /// Persisted app settings: the anonymous backend session plus the custom
 /// vocabulary. The AI provider key lives on the backend, never here.
 class AppSettings {
-  const AppSettings({
-    required this.token,
-    this.userId = '',
-    this.installId = '',
-    required this.vocabulary,
-  });
+  const AppSettings({required this.token, required this.vocabulary});
 
   /// The backend session token (empty until the device has signed in).
   final String token;
-  final String userId;
-  final String installId;
   final String vocabulary;
 
   /// Whether the device holds a usable backend session.
@@ -55,12 +48,8 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     final vocab = await store.readVocabulary() ?? '';
     final auth = BackendAuth(store: store);
 
-    AppSettings from(BackendSession? session) => AppSettings(
-          token: session?.token ?? '',
-          userId: session?.userId ?? '',
-          installId: session?.installId ?? '',
-          vocabulary: vocab,
-        );
+    AppSettings from(BackendSession? session) =>
+        AppSettings(token: session?.token ?? '', vocabulary: vocab);
 
     // Prefer a stored session; otherwise sign in. Sign-in failures (offline on
     // first launch) leave the device unconfigured rather than crashing, so the
@@ -82,27 +71,21 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     final current = state.value;
     state = AsyncData(AppSettings(
       token: current?.token ?? '',
-      userId: current?.userId ?? '',
-      installId: current?.installId ?? '',
       vocabulary: vocabulary.trim(),
     ));
   }
 
-  /// Re-attempts anonymous sign-in. Used by the account screen's retry button
-  /// after an offline first launch.
+  /// Forces a fresh sign-in, discarding any stored token. Used by the account
+  /// screen's retry button to recover from an expired or rejected session.
   Future<void> refreshSession() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final store = SecureSettings();
       final vocab = await store.readVocabulary() ?? '';
       final auth = BackendAuth(store: store);
-      final session = await auth.restore() ?? await auth.signIn();
-      return AppSettings(
-        token: session.token,
-        userId: session.userId,
-        installId: session.installId,
-        vocabulary: vocab,
-      );
+      await auth.clearSession();
+      final session = await auth.signIn();
+      return AppSettings(token: session.token, vocabulary: vocab);
     });
   }
 }

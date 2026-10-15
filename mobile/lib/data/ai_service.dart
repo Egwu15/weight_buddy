@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -343,12 +344,47 @@ class AiService {
   final String _baseUrl;
   final String token;
 
+  /// Bounds every backend call so a stalled connection surfaces as an error
+  /// instead of hanging the UI indefinitely.
+  static const _timeout = Duration(seconds: 60);
+
   Uri _uri(String path) => Uri.parse('$_baseUrl$path');
 
   Map<String, String> get _jsonHeaders => {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
       };
+
+  Future<http.Response> _post(String path, Map<String, dynamic> body) async {
+    try {
+      return await _client
+          .post(_uri(path), headers: _jsonHeaders, body: jsonEncode(body))
+          .timeout(_timeout);
+    } on TimeoutException {
+      throw const AiServiceException(
+          'Weight Buddy took too long to respond. Try again.');
+    }
+  }
+
+  Future<http.Response> _get(String path) async {
+    try {
+      return await _client
+          .get(_uri(path), headers: {'Authorization': 'Bearer $token'})
+          .timeout(_timeout);
+    } on TimeoutException {
+      throw const AiServiceException(
+          'Weight Buddy took too long to respond. Try again.');
+    }
+  }
+
+  /// The device's wall clock as HH:MM, so the backend classifies meals against
+  /// the user's timezone rather than the server's.
+  static String _localTime() {
+    final now = DateTime.now();
+    final h = now.hour.toString().padLeft(2, '0');
+    final m = now.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
 
   /// Stage 1 — transcribe recorded audio. The custom vocabulary is passed as
   /// the transcription `prompt` to boost recognition of regional dish names.
@@ -366,8 +402,14 @@ class AiService {
       request.fields['prompt'] = prompt;
     }
 
-    final streamed = await _client.send(request);
-    final response = await http.Response.fromStream(streamed);
+    final http.Response response;
+    try {
+      final streamed = await _client.send(request).timeout(_timeout);
+      response = await http.Response.fromStream(streamed).timeout(_timeout);
+    } on TimeoutException {
+      throw const AiServiceException(
+          'Weight Buddy took too long to respond. Try again.');
+    }
     if (response.statusCode != 200) {
       throw AiServiceException(_errorMessage(response));
     }
@@ -388,14 +430,11 @@ class AiService {
     String model = 'gpt-4o-mini',
     double? weightKg,
   }) async {
-    final response = await _client.post(
-      _uri('/v1/ai/parse'),
-      headers: _jsonHeaders,
-      body: jsonEncode({
-        'transcript': transcript,
-        'weight_kg': weightKg,
-      }),
-    );
+    final response = await _post('/v1/ai/parse', {
+      'transcript': transcript,
+      'weight_kg': weightKg,
+      'local_time': _localTime(),
+    });
     if (response.statusCode != 200) {
       throw AiServiceException(_errorMessage(response));
     }
@@ -411,16 +450,12 @@ class AiService {
     required String systemPrompt,
     String model = 'gpt-4o-mini',
   }) async {
-    final response = await _client.post(
-      _uri('/v1/ai/chat'),
-      headers: _jsonHeaders,
-      body: jsonEncode({
-        'system_prompt': systemPrompt,
-        'messages': [
-          for (final t in history) {'role': t.role, 'content': t.content},
-        ],
-      }),
-    );
+    final response = await _post('/v1/ai/chat', {
+      'system_prompt': systemPrompt,
+      'messages': [
+        for (final t in history) {'role': t.role, 'content': t.content},
+      ],
+    });
     if (response.statusCode != 200) {
       throw AiServiceException(_errorMessage(response));
     }
@@ -439,15 +474,11 @@ class AiService {
     required List<ChatTurn> exchange,
     String model = 'gpt-4o-mini',
   }) async {
-    final response = await _client.post(
-      _uri('/v1/ai/distill-memories'),
-      headers: _jsonHeaders,
-      body: jsonEncode({
-        'exchange': [
-          for (final t in exchange) {'role': t.role, 'content': t.content},
-        ],
-      }),
-    );
+    final response = await _post('/v1/ai/distill-memories', {
+      'exchange': [
+        for (final t in exchange) {'role': t.role, 'content': t.content},
+      ],
+    });
     if (response.statusCode != 200) {
       throw AiServiceException(_errorMessage(response));
     }
@@ -475,15 +506,11 @@ class AiService {
     required List<ChatTurn> exchange,
     String model = 'gpt-4o-mini',
   }) async {
-    final response = await _client.post(
-      _uri('/v1/ai/extract-exercises'),
-      headers: _jsonHeaders,
-      body: jsonEncode({
-        'exchange': [
-          for (final t in exchange) {'role': t.role, 'content': t.content},
-        ],
-      }),
-    );
+    final response = await _post('/v1/ai/extract-exercises', {
+      'exchange': [
+        for (final t in exchange) {'role': t.role, 'content': t.content},
+      ],
+    });
     if (response.statusCode != 200) {
       throw AiServiceException(_errorMessage(response));
     }
@@ -514,10 +541,7 @@ class AiService {
 
   /// The signed-in user's tier and remaining daily allowance.
   Future<AccountInfo> me() async {
-    final response = await _client.get(
-      _uri('/v1/me'),
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await _get('/v1/me');
     if (response.statusCode != 200) {
       throw AiServiceException(_errorMessage(response));
     }

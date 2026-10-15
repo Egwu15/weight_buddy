@@ -33,12 +33,18 @@ class SecureSettings {
   Future<void> writeVocabulary(String value) =>
       _storage.write(key: _keyVocabulary, value: value);
 
-  /// Removes the session and vocabulary, returning the app to the state it
-  /// starts in on a fresh install.
-  Future<void> clear() async {
+  /// Removes only the session (install id, user id, token), keeping the user's
+  /// vocabulary. Used when a stored session is no longer valid.
+  Future<void> clearSession() async {
     await _storage.delete(key: _keyInstallId);
     await _storage.delete(key: _keyUserId);
     await _storage.delete(key: _keyToken);
+  }
+
+  /// Removes the session and vocabulary, returning the app to the state it
+  /// starts in on a fresh install.
+  Future<void> clear() async {
+    await clearSession();
     await _storage.delete(key: _keyVocabulary);
   }
 }

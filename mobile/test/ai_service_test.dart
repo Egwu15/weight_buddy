@@ -18,6 +18,7 @@ void main() {
         expect(request.headers['Authorization'], 'Bearer test-token');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['transcript'], 'I had jollof rice');
+        expect(body['local_time'], matches(RegExp(r'^\d{2}:\d{2}$')));
         return http.Response(
           jsonEncode({
             'entry_type': 'meal',

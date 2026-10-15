@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:weight_buddy/data/backend_auth.dart';
+import 'package:weight_buddy/data/secure_settings.dart';
 
 const _base = 'http://backend.test';
 
@@ -86,6 +87,39 @@ void main() {
     );
   });
 
+  test('restore clears an expired stored token', () async {
+    final auth = BackendAuth(
+      client: MockClient((_) async => http.Response('{}', 500)),
+      baseUrl: _base,
+    );
+    // Seed a stored session whose JWT is already expired.
+    FlutterSecureStorage.setMockInitialValues({
+      'backend_install_id': 'install-1',
+      'backend_user_id': 'user-1',
+      'backend_token': _jwt(exp: 1),
+    });
+
+    expect(await auth.restore(), isNull);
+    // The stale session must be cleared so the next launch signs in fresh.
+    expect(await SecureSettings().readToken(), isNull);
+  });
+
+  test('clearSession keeps the vocabulary', () async {
+    FlutterSecureStorage.setMockInitialValues({
+      'backend_install_id': 'install-1',
+      'backend_user_id': 'user-1',
+      'backend_token': _jwt(exp: 9999999999),
+      'custom_vocabulary': 'Jollof, Egusi',
+    });
+
+    await BackendAuth(baseUrl: _base).clearSession();
+
+    final store = SecureSettings();
+    expect(await store.readToken(), isNull);
+    expect(await store.readInstallId(), isNull);
+    expect(await store.readVocabulary(), 'Jollof, Egusi');
+  });
+
   test('signIn reports a friendly message when offline', () async {
     final auth = BackendAuth(
       client: MockClient((request) async {
@@ -103,4 +137,11 @@ void main() {
       )),
     );
   });
+}
+
+/// Builds a minimal (unverifiable) JWT with the given expiry for restore tests.
+String _jwt({required int exp}) {
+  String enc(Map<String, dynamic> map) =>
+      base64Url.encode(utf8.encode(jsonEncode(map))).replaceAll('=', '');
+  return '${enc({'alg': 'HS256', 'typ': 'JWT'})}.${enc({'exp': exp})}.sig';
 }
