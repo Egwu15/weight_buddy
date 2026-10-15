@@ -1,0 +1,525 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Weight Buddy — PRD</title>
+<style>
+@page { size: A4; margin: 18mm 16mm 16mm 16mm; }
+:root{
+  --pot:#221A17; --bone:#F4EAD9; --jollof:#E85D2F; --plantain:#F2B53C;
+  --ugu:#5CA96C; --suya:#C08A5A; --ink:#1b1512; --mut:#6b6058; --rule:#ddd3c6;
+}
+*{box-sizing:border-box}
+body{font-family:"Karla","Helvetica Neue",Arial,sans-serif;color:var(--ink);
+  font-size:10.2pt;line-height:1.5;margin:0}
+h1,h2,h3,h4{font-family:"Karla",Arial,sans-serif;line-height:1.2;margin:0}
+.cover{height:262mm;display:flex;flex-direction:column;justify-content:center;
+  background:var(--pot);color:var(--bone);padding:0 16mm;border-radius:4mm;
+  page-break-after:always}
+.cover .wave{display:flex;align-items:flex-end;gap:4px;height:46px;margin-bottom:26px}
+.cover .wave i{display:block;width:7px;border-radius:2px;background:var(--jollof)}
+.cover h1{font-size:34pt;letter-spacing:-.5px}
+.cover .sub{font-size:13pt;color:var(--plantain);margin-top:10px;font-weight:600}
+.cover p.tag{color:#c9b8a6;max-width:120mm;margin-top:16px;font-size:11pt}
+.cover .meta{margin-top:40px;font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  font-size:8.5pt;color:#a2907f;letter-spacing:.4px}
+.cover .meta b{color:var(--bone);font-weight:600}
+h2{font-size:15pt;margin:26px 0 8px;padding-bottom:5px;border-bottom:2px solid var(--jollof);
+  page-break-after:avoid}
+h3{font-size:11.4pt;margin:16px 0 5px;color:#3a2c25;page-break-after:avoid}
+h4{font-size:10pt;margin:11px 0 3px;color:var(--mut);text-transform:uppercase;
+  letter-spacing:.8px;font-size:8.4pt}
+p{margin:0 0 8px}
+ul,ol{margin:0 0 9px;padding-left:17px}
+li{margin-bottom:3px}
+table{width:100%;border-collapse:collapse;margin:6px 0 12px;font-size:9pt;
+  page-break-inside:avoid}
+th{background:#f4ece2;text-align:left;padding:5px 7px;border-bottom:1.5px solid var(--rule);
+  font-size:8.2pt;text-transform:uppercase;letter-spacing:.6px;color:#5a4b41}
+td{padding:5px 7px;border-bottom:1px solid #eee6db;vertical-align:top}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:8.6pt;
+  background:#f5efe6;padding:1px 4px;border-radius:3px}
+pre{background:var(--pot);color:var(--bone);padding:9px 11px;border-radius:5px;
+  font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:8pt;line-height:1.45;
+  overflow:hidden;page-break-inside:avoid;margin:6px 0 12px}
+pre code{background:none;color:inherit;padding:0;font-size:8pt}
+blockquote{margin:8px 0;padding:8px 12px;background:#faf5ee;border-left:3px solid var(--plantain);
+  font-size:9.4pt}
+.pill{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:7.4pt;
+  padding:1.5px 6px;border-radius:9px;letter-spacing:.5px;vertical-align:1px}
+.built{background:#e4f2e6;color:#2f6b3d;border:1px solid #bcdcc3}
+.plan{background:#fdf0dd;color:#8a5a12;border:1px solid #f0d5a5}
+.two{display:flex;gap:14px}
+.two>div{flex:1}
+.box{background:#faf6f0;border:1px solid var(--rule);border-radius:6px;padding:10px 12px;
+  margin:8px 0 12px;page-break-inside:avoid}
+.box h4{margin-top:0}
+.kpi{display:flex;gap:8px;margin:10px 0 14px}
+.kpi div{flex:1;border:1px solid var(--rule);border-radius:6px;padding:8px 9px;background:#fff}
+.kpi b{display:block;font-family:"IBM Plex Mono",monospace;font-size:14pt;color:var(--jollof)}
+.kpi span{font-size:8pt;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
+.brk{page-break-before:always}
+.small{font-size:8.6pt;color:var(--mut)}
+</style></head><body>
+
+<div class="cover">
+  <div class="wave">
+    <i style="height:14px"></i><i style="height:26px"></i><i style="height:19px"></i>
+    <i style="height:38px;background:#F2B53C"></i><i style="height:46px;background:#F2B53C"></i>
+    <i style="height:30px"></i><i style="height:22px;background:#5CA96C"></i>
+    <i style="height:34px"></i><i style="height:12px"></i><i style="height:24px"></i>
+    <i style="height:9px"></i>
+  </div>
+  <h1>Weight&nbsp;Buddy</h1>
+  <div class="sub">Product Requirements Document</div>
+  <p class="tag">A personal voice calorie, macro &amp; exercise tracker. Speak what you ate
+  or how you moved — parsed by your own OpenAI key, stored entirely on your device.</p>
+  <div class="meta">
+    VERSION <b>1.0.4 (build 4)</b> &nbsp;·&nbsp; DATE <b>31 Aug 2026</b><br>
+    PLATFORM <b>Flutter — iOS / Android</b> &nbsp;·&nbsp; APP ID <b>com.tedif.weight_buddy</b><br>
+    STATUS <b>Shipped — v1.0.x maintenance + v1.1 scope</b>
+  </div>
+</div>
+
+<h2>1. Overview</h2>
+<p>Weight Buddy is a single-user, offline-first mobile app for tracking calories, macronutrients
+and exercise by <strong>speaking instead of searching</strong>. The user holds a button, says
+"two plates of jollof rice with two pieces of fried chicken", and gets a reviewable breakdown of
+items, calories and macros in a few seconds.</p>
+<p>It differs from mainstream trackers in three deliberate ways:</p>
+<ul>
+  <li><strong>Regional food is a first-class citizen.</strong> Audio is transcribed by OpenAI's
+  audio API with a user-supplied dish-name vocabulary, not by the device's native recognizer,
+  so <em>egusi</em>, <em>amala</em>, <em>suya</em> and <em>dodo</em> are heard correctly. Portions
+  are estimated from natural phrasing ("two plates"), not from a food database the user must search.</li>
+  <li><strong>No backend, no subscription, no account.</strong> Bring-your-own OpenAI API key.
+  All data lives in on-device SQLite; the key lives in the platform secure vault. The only outbound
+  traffic is to <code>api.openai.com</code>.</li>
+  <li><strong>The model parses; it never prices exercise.</strong> Workout burns are computed by a
+  deterministic local engine (mechanical work for reps, MET for duration) off the user's latest
+  weigh-in — so a 20-rep set logs ~7 kcal, not an invented workout-sized number.</li>
+</ul>
+
+<h3>1.1 Problem</h3>
+<p>Calorie tracking fails for two compounding reasons. First, <strong>logging friction</strong>:
+searching a food database, picking a match, then setting a portion takes 30–60 seconds per item,
+several times a day, and adherence collapses within weeks. Second, <strong>database coverage</strong>:
+users outside North America and Western Europe routinely cannot find their actual meals, and settle
+for a wrong "closest match" that quietly destroys the data's usefulness. Voice input on native
+phone recognizers does not solve this — those engines mangle regional dish names into unrelated
+English words.</p>
+
+<h3>1.2 Goals</h3>
+<table>
+  <tr><th style="width:26%">Goal</th><th>What it means concretely</th></tr>
+  <tr><td>Frictionless logging</td><td>A meal is logged in one hold-to-speak gesture plus one confirm tap. Target: under 15 seconds end-to-end.</td></tr>
+  <tr><td>Accuracy on local foods</td><td>Regional dish names transcribe correctly via OpenAI audio + custom vocabulary hints.</td></tr>
+  <tr><td>Honest numbers</td><td>Exercise burn is computed deterministically, never guessed by the LLM. Estimates are never fabricated when inputs are missing.</td></tr>
+  <tr><td>Full macro picture</td><td>Protein / carbs / fat tracked alongside calories, with no extra user effort.</td></tr>
+  <tr><td>Privacy &amp; ownership</td><td>Zero cloud backend. Data is on-device, exportable, and deletable in one action.</td></tr>
+  <tr><td>Sustained adherence</td><td>Streaks, month calendar, weight trend and a coach chat give the user reasons to return.</td></tr>
+</table>
+
+<h3>1.3 Non-goals</h3>
+<ul>
+  <li><strong>Multi-user accounts, social features, or sharing.</strong> This is a single-owner app; there is no login.</li>
+  <li><strong>A hosted backend or a managed API key.</strong> BYOK is the architecture, not a temporary stage.</li>
+  <li><strong>Barcode scanning or a curated food database.</strong> The LLM's estimate replaces the database lookup.</li>
+  <li><strong>Medical-grade accuracy or clinical advice.</strong> The coach is a motivational and planning aid.</li>
+  <li><strong>Wearable / HealthKit / Google Fit sync.</strong> Considered post-v1.1.</li>
+  <li><strong>Web target.</strong> Flutter web is technically reachable but out of scope for now.</li>
+</ul>
+
+<h3>1.4 Target user</h3>
+<div class="box">
+  <h4>Primary persona — "the returning tracker"</h4>
+  <p style="margin-bottom:6px">An adult who has tried MyFitnessPal or similar and quit within a month.
+  Technically comfortable enough to paste an API key. Eats mostly home-cooked or regional food that
+  mainstream databases cover poorly. Wants to lose or maintain weight, cares about protein, weighs
+  themselves irregularly (monthly is normal), and will only keep logging if it takes seconds.</p>
+  <p class="small" style="margin:0"><strong>Core scenario:</strong> finishes lunch, opens the app,
+  holds the record dock, says what they ate, glances at the parsed card, taps save, closes the app.
+  Total elapsed: ~12 seconds. At month's end they open the Month tab, see a wall of green days and
+  a downward weight line, and keep going.</p>
+</div>
+
+<h2 class="brk">2. Feature Requirements</h2>
+<p class="small">Status legend: <span class="pill built">BUILT</span> shipped and covered by tests ·
+<span class="pill plan">PLANNED</span> scoped, not yet implemented.</p>
+
+<h3>F1 · BYOK &amp; custom vocabulary <span class="pill built">BUILT</span></h3>
+<p><strong>Settings → OpenAI &amp; voice.</strong> The user's own OpenAI credential and the phrase
+list that makes local foods transcribe correctly.</p>
+<ul>
+  <li>The API key is stored in the platform secure vault (iOS Keychain / Android EncryptedSharedPreferences)
+  via <code>flutter_secure_storage</code> — never in SQLite, never in a backup file.</li>
+  <li>The full key is never rendered after saving: it displays as <code>sk-••••••••abcd</code> with
+  <strong>no reveal control</strong>. Changing it is an explicit "Replace key" action.</li>
+  <li>Basic format validation before save.</li>
+  <li>Optional comma-separated <strong>vocabulary hints</strong> ("Jollof, Egusi, Amala, Suya, Akara, Dodo")
+  passed as the transcription API's <code>prompt</code> parameter to bias phonetic decoding.</li>
+</ul>
+
+<h3>F2 · Voice meal logging &amp; macro calculation <span class="pill built">BUILT</span></h3>
+<p>Speech (or typed text) → structured food record with items, portions, calories, macros and a meal type.</p>
+<table>
+  <tr><th style="width:24%">Requirement</th><th>Detail</th></tr>
+  <tr><td>Audio capture</td><td><code>record</code> package, .m4a, with a live amplitude stream driving the on-screen waveform.</td></tr>
+  <tr><td>Transcription</td><td><code>POST /v1/audio/transcriptions</code>, model <code>gpt-transcribe</code> (<code>whisper-1</code> also supported), with vocabulary hints as <code>prompt</code>.</td></tr>
+  <tr><td>Parsing</td><td><code>gpt-4o-mini</code> with Structured Outputs (strict JSON Schema) — see §4.2.</td></tr>
+  <tr><td>Typing fallback</td><td>"Type instead" on the idle record sheet runs the identical parse pipeline, skipping transcription — for noisy rooms, a broken mic, or a tired voice.</td></tr>
+  <tr><td>No-key onboarding</td><td>With no saved key the sheet explains what is needed and offers "Go to Settings", which closes the sheet and jumps to the Settings tab.</td></tr>
+  <tr><td>Extracted fields</td><td>Per item: name, quantity, kcal, protein g, carbs g, fat g. Per entry: summary, totals, and a meal type inferred from the food plus local time.</td></tr>
+  <tr><td>Confirm before save</td><td>A confirmation card shows parsed items, macro breakdown and a user-adjustable meal-type picker. Nothing is persisted until the user confirms.</td></tr>
+  <tr><td>Fix the words</td><td>From the confirm stage, "fix the words" returns to the typing view pre-filled rather than discarding the attempt.</td></tr>
+</table>
+
+<h3>F3 · Voice exercise logging &amp; deterministic burn <span class="pill built">BUILT</span></h3>
+<p>The same pipeline for movement — with one hard rule: <strong>the model extracts structure only</strong>
+(activity name, sets, reps, duration). <code>estimated_calories_burned</code> is always <code>null</code>
+in the model's reply; the app prices every burn locally (§4.3).</p>
+<ul>
+  <li>A spoken session becomes <strong>one timeline entry</strong> with its exercises nested as items —
+  the mirror of a meal's food items. "5 knee press-ups and 5 dips" lands as one row titled
+  "Knee Press-ups + 1 more".</li>
+  <li>Burns are priced off the user's latest weigh-in. <strong>If the weight is unknown, the burn is zero</strong>,
+  not an invented figure.</li>
+</ul>
+
+<h3>F4 · Daily dashboard <span class="pill built">BUILT</span></h3>
+<ul>
+  <li><strong>Calorie ledger:</strong> consumed, burned, net, and <strong>Left</strong> (maintenance − net) —
+  green while under budget, jollof-orange when over.</li>
+  <li><strong>Period glance:</strong> a compact readout of what is left for the current <em>week</em> and
+  <em>month</em>, budgeted from today to period end so a late sign-in never inflates the number.
+  Tappable through to the Month tab.</li>
+  <li><strong>Macro card:</strong> daily protein / carbs / fat totals.</li>
+  <li><strong>Day's Wave (signature):</strong> the day's entries drawn as a waveform — one peak per entry,
+  height ∝ calories, colour by type, x-position by time of day. Tapping a peak reveals its summary;
+  an empty day is a flatline invitation to log.</li>
+  <li><strong>Timeline:</strong> chronological feed of meals (with macro detail) and workouts for the active date,
+  with per-entry delete.</li>
+  <li><strong>Edit &amp; re-parse:</strong> any entry opens an editor — correct the words and re-parse with AI,
+  or fix by hand (quantities scale calories and macros; add or remove items; change meal type). Saving updates
+  the row <strong>in place</strong> (same id and timestamp) so timeline position and the day's maintenance
+  snapshot survive. This is the fix for a mis-priced item or a forgotten side, without re-dictating.</li>
+</ul>
+
+<h3>F5 · Month calendar, maintenance colours &amp; streaks <span class="pill built">BUILT</span></h3>
+<ul>
+  <li><strong>Colour coding:</strong> a logged day is <strong>ugu green</strong> when net kcal ≤ that day's
+  maintenance target, <strong>jollof</strong> when above, neutral when nothing was logged.</li>
+  <li><strong>Per-day snapshots:</strong> every log writes the maintenance target in force that day
+  (<code>day_maintenance</code>); the calendar and the on-plan streak judge each day by its own snapshot,
+  so changing the target today never rewrites history.</li>
+  <li><strong>Streaks:</strong> LOG STREAK (consecutive days with ≥1 entry) and ON-PLAN (logged <em>and</em>
+  at/below maintenance), computed over the last 90 days.</li>
+  <li><strong>Week &amp; month ledgers:</strong> two cards above the calendar; the week card (Mon–Sun) carries
+  its own navigation. For an ongoing period the budget runs <strong>today → period end</strong> at each day's
+  target, and LEFT = budget − net − overspend carried in from earlier tracked days.
+  <strong>Untracked days count for nothing</strong> — skipped days never inflate LEFT, and under-eating never
+  banks extra allowance.</li>
+  <li><strong>Navigation:</strong> tapping a day jumps the Today dashboard to that date.</li>
+</ul>
+
+<h3>F6 · Weight tracking <span class="pill built">BUILT</span></h3>
+<ul>
+  <li><strong>Today card:</strong> latest weight, 30-day delta, and a hairline custom-painted trend sparkline.</li>
+  <li><strong>Weigh-in sheet:</strong> date, weight in kg <em>or</em> lb (a per-entry input choice — readings are
+  always stored and displayed in kg, so there is no global unit setting to configure), optional note.</li>
+  <li><strong>History screen:</strong> full list newest-first with delete, plus an add FAB.</li>
+  <li>Designed for an irregular rhythm — monthly weigh-ins are a supported use case, not a degraded one.</li>
+</ul>
+
+<h3 class="brk">F7 · Coach chat with memory <span class="pill built">BUILT</span></h3>
+<p>A persistent conversation on the same BYOK key, fed the user's live numbers plus a distilled,
+user-editable memory layer.</p>
+<ul>
+  <li><strong>Context digest</strong> assembled per message: maintenance target, today's totals, last 7 days,
+  weight trend, streaks, active memories, saved exercises.</li>
+  <li><strong>Persisted thread</strong> (<code>chat_messages</code>) — one conversation, with a "new conversation"
+  reset that memories and the exercise library survive.</li>
+  <li><strong>Memory distillation:</strong> roughly every 4 exchanges, a strict-schema call extracts
+  <code>{topic, content, category, action: create|update|remove}</code> facts. Upsert is latest-wins per topic;
+  stale facts can be retired by the model.</li>
+  <li><strong>Memory manager:</strong> view / edit / add / delete, with a source label (you said · coach learned)
+  and a master <strong>"Let the coach remember"</strong> switch that halts both writes and injection.</li>
+  <li><strong>Privacy:</strong> memories live only on-device and travel to OpenAI solely as chat context.</li>
+</ul>
+
+<h3>F8 · Auto-saved exercise recommendations <span class="pill built">BUILT</span></h3>
+<ul>
+  <li>When the coach gives exercise advice, a <strong>keyword-gated</strong> strict-schema extraction call pulls the
+  concrete recommendations out (<code>has_exercise_advice</code> + name, description, muscle groups, sets/reps/rest/duration,
+  difficulty, plan name) and auto-saves them — no hunting through chat history. The gate keeps non-exercise chats
+  from spending an extra API call.</li>
+  <li><strong>Deduped by name</strong> (case-insensitive); duplicates are silently skipped.</li>
+  <li><strong>Workouts screen:</strong> each card supports <em>Copy</em>, <em>Ask</em> (a follow-up coach turn about that
+  exercise), <em>Log it</em> (runs it through the parse pipeline and saves it as today's exercise entry), and remove.</li>
+  <li><strong>Routines:</strong> a named plan ("Leg Day A") groups its exercises via <code>plan_name</code>.</li>
+</ul>
+
+<h3>F9 · Gap-aware daily reminders <span class="pill built">BUILT</span></h3>
+<p>A local notification at a user-chosen time that only nudges when the day still has gaps.</p>
+<ul>
+  <li>Settings → Daily reminder: on/off switch plus time picker. Runtime permission flow for iOS and Android 13+.</li>
+  <li><strong>Inexact daily scheduling</strong> (<code>inexactAllowWhileIdle</code>) so no exact-alarm permission is required on Android.</li>
+  <li><strong>Message selection</strong> re-evaluated at every re-arm point (launch, foreground resume, each log add/delete,
+  settings change): nothing logged → "What did you eat today?"; a missing breakfast/lunch/dinner (snacks never count) →
+  "Anything else today? (…)"; meals complete but no workout → "Did you get your workout in?"; a complete day → silent today,
+  but the daily repeat is <strong>re-armed for tomorrow, never cancelled</strong>.</li>
+  <li><strong>Survives reboot</strong> via a boot receiver (<code>RECEIVE_BOOT_COMPLETED</code>), and the app declares
+  <code>ScheduledNotificationReceiver</code> itself — required since <code>flutter_local_notifications</code> v16
+  stopped declaring its own, or scheduled alarms fire into nothing.</li>
+</ul>
+
+<h3>F10 · First-run profile &amp; adaptive maintenance target <span class="pill built">BUILT</span></h3>
+<p>The maintenance target is the single line the calendar, budgets, streaks and coach all measure against —
+so it is <em>estimated from the user</em>, never guessed.</p>
+<ul>
+  <li><strong>Onboarding gate:</strong> a fresh install shows a 4-step flow (height → weight → birthday &amp; sex →
+  activity) with a progress bar and per-step validation. There is <strong>no skip</strong>. Existing installs
+  (any log, weigh-in, or stored target) never see it.</li>
+  <li><strong>Date of birth, not age</strong> — a calendar picker; age is derived on the fly so it never goes stale.</li>
+  <li><strong>Mifflin-St Jeor:</strong> <code>BMR = 10·kg + 6.25·cm − 5·age + (5 | −161)</code>;
+  maintenance = BMR × activity factor (5 levels, 1.2–1.9). Shown live on the final step.</li>
+  <li><strong>The target IS the estimate.</strong> Settings → Targets &amp; profile shows it as a
+  <em>display-only readout</em> that recalculates the instant any profile input changes, using the latest weigh-in
+  for current weight. There is no hidden "apply" step.</li>
+  <li><strong>Manual override is opt-in:</strong> a "Set my own target" toggle reveals a number field with a
+  "your profile suggests X" comparison and a one-tap "Back to automatic". A hand-set target <strong>pauses the
+  weight sync</strong> — a weigh-in never silently overrides an explicit number.</li>
+  <li><strong>The target follows your weight:</strong> a weigh-in that moves weight by ≥ 0.5 kg (ignoring daily water
+  wobble) recomputes the target. With ≥ 14 days between weigh-ins and ≥ 10 days of food logs it uses the
+  <em>observed</em> estimate <code>avg daily intake + Δkg × 7,700 / days</code>, clamped to ±15% of the formula
+  estimate so a skipped week can never halve or double it; with too little data it falls back to the formula.
+  Logged workouts already live inside the weight trend, so they are never double-counted. The sheet reports the
+  result: "target updated to X kcal".</li>
+</ul>
+
+<h3>F11 · Backup, restore &amp; full reset <span class="pill built">BUILT</span></h3>
+<p>Because the app is device-local with no server copy, a reinstall — or an Android signing-key change, which
+forces an uninstall — would otherwise lose everything.</p>
+<ul>
+  <li><strong>Export:</strong> the whole database as a single JSON document (<code>app_settings</code>, <code>logs</code>,
+  <code>weigh_ins</code>, <code>chat_messages</code>, <code>memories</code>, <code>exercise_recommendations</code>,
+  <code>day_maintenance</code>) with a format version independent of the schema version, shared via the system
+  share sheet as <code>weight-buddy-backup-YYYY-MM-DD-HHMM.json</code>.</li>
+  <li><strong>The OpenAI key is deliberately excluded.</strong> Writing a billable credential into a plaintext file the
+  user then shares around would leak it; it must be re-entered by hand after a restore.</li>
+  <li><strong>Import:</strong> the file is parsed and validated before anything is written, with errors phrased for the user.</li>
+  <li><strong>Delete all:</strong> wipes every record, clears <code>app_settings</code> (profile, target, reminder, memory switch,
+  demo marker) and deletes the key and vocabulary from the secure store, then returns to the first-run questionnaire —
+  a state indistinguishable from a brand-new install.</li>
+  <li><strong>Demo data (debug builds only):</strong> ~14 days of tagged meals and workouts, a weigh-in trend, a coach
+  conversation, memories and an exercise library. Idempotent via a <code>demo_seeded</code> marker; the key and targets survive.</li>
+</ul>
+
+<h2 class="brk">3. User Experience</h2>
+
+<h3>3.1 Information architecture</h3>
+<table>
+  <tr><th style="width:20%">Surface</th><th>Contains</th></tr>
+  <tr><td><strong>Today</strong> (home)</td><td>Calorie ledger · period glance · macro card · Day's Wave · weight card · timeline. The record dock is pinned across the shell.</td></tr>
+  <tr><td><strong>Month</strong></td><td>Week &amp; month budget ledgers · streaks · tinted calendar; a day taps through to Today.</td></tr>
+  <tr><td><strong>Coach</strong></td><td>The persistent chat thread; new-conversation reset.</td></tr>
+  <tr><td><strong>Workouts</strong></td><td>The auto-saved exercise library, grouped into named routines.</td></tr>
+  <tr><td><strong>Settings</strong></td><td>A hub that fans out to four focused pages — OpenAI &amp; voice · Targets &amp; profile · Daily reminder · Data (backup, demo, delete-all) — each with its own save flow, rather than one long scrolling form.</td></tr>
+</table>
+
+<h3>3.2 Design identity</h3>
+<p><strong>Direction: "the pot and the plate"</strong> — a deep roasted-cocoa night kitchen, lit by the food itself:
+warm brown-black ground, raised bark surfaces, hairline ember separators.</p>
+<table>
+  <tr><th>Token</th><th>Hex</th><th>Role</th></tr>
+  <tr><td>pot</td><td class="mono">#221A17</td><td>background</td></tr>
+  <tr><td>bone</td><td class="mono">#F4EAD9</td><td>text</td></tr>
+  <tr><td>jollof</td><td class="mono">#E85D2F</td><td>primary · meals · over-budget</td></tr>
+  <tr><td>plantain</td><td class="mono">#F2B53C</td><td>accent · protein</td></tr>
+  <tr><td>ugu</td><td class="mono">#5CA96C</td><td>exercise · on-plan</td></tr>
+  <tr><td>suya</td><td class="mono">#C08A5A</td><td>fat macro</td></tr>
+</table>
+<p><strong>Typography:</strong> IBM Plex Mono for every number (kitchen-scale readouts), Karla for reading text,
+small-caps mono labels. <strong>Signature:</strong> the Day's Wave — the day drawn as a waveform on the dashboard,
+echoed live on the record sheet while speaking. <strong>Launcher icon:</strong> the Day's Wave (jollof bars, plantain
+centre peak) on the pot ground.</p>
+
+<h3>3.3 Key flows</h3>
+<h4>Log a meal by voice</h4>
+<p class="small">Open app → hold the record dock → speak → release → (transcribe → parse, &lt;4 s, waveform animates) →
+confirm card with items, macros, meal-type picker → <em>Save</em> → the entry appears as a new peak on the Day's Wave
+and a row in the timeline; the reminder re-arms with a fresh gap-aware message.</p>
+<h4>Correct a wrong estimate</h4>
+<p class="small">Tap the timeline row → details sheet → <em>Edit</em> → either fix the transcript and
+<em>re-parse with AI</em>, or adjust quantities / add / remove items by hand → <em>Save</em> → the row updates in place,
+keeping its id, timestamp and the day's maintenance snapshot.</p>
+<h4>First run</h4>
+<p class="small">Install → onboarding (height → weight → birthday &amp; sex → activity), maintenance estimate shown live →
+shell → record sheet explains the missing key → Settings → OpenAI &amp; voice → paste key, optionally add dish names → log.</p>
+
+<h2>4. Technical Specification</h2>
+
+<h3>4.1 Stack</h3>
+<table>
+  <tr><th style="width:26%">Concern</th><th>Choice</th></tr>
+  <tr><td>Framework</td><td>Flutter (Dart SDK ^3.11.5) — iOS and Android; web considered a future target</td></tr>
+  <tr><td>State</td><td><code>flutter_riverpod</code> (Riverpod 3)</td></tr>
+  <tr><td>Persistence</td><td>SQLite via <code>sqflite</code>, offline-first — <strong>schema v4</strong> with <code>onUpgrade</code> migrations</td></tr>
+  <tr><td>Secrets</td><td><code>flutter_secure_storage</code> — Keychain / EncryptedSharedPreferences</td></tr>
+  <tr><td>Audio</td><td><code>record</code> (.m4a + live amplitude), <code>permission_handler</code></td></tr>
+  <tr><td>Notifications</td><td><code>flutter_local_notifications</code> + <code>timezone</code> + <code>flutter_timezone</code></td></tr>
+  <tr><td>Networking</td><td><code>http</code> — outbound calls go only to OpenAI</td></tr>
+  <tr><td>Backup I/O</td><td><code>share_plus</code>, <code>file_picker</code>, <code>path_provider</code></td></tr>
+  <tr><td>Typography</td><td><code>google_fonts</code> (cached after first load)</td></tr>
+  <tr><td>App id</td><td><code>com.tedif.weight_buddy</code> (Android applicationId/namespace + iOS bundle id)</td></tr>
+</table>
+
+<h3>4.2 OpenAI integration</h3>
+<h4>Transcription</h4>
+<p><code>POST https://api.openai.com/v1/audio/transcriptions</code> · model <code>gpt-transcribe</code>
+(<code>whisper-1</code> supported) · <code>file</code> = recorded audio · <code>prompt</code> = the user's dish-name hints.</p>
+<h4>Structured parsing</h4>
+<p>Model <code>gpt-4o-mini</code> with Structured Outputs. All schemas are <strong>fully strict-mode compliant</strong> —
+every property appears in <code>required</code>, and optional fields use nullable unions
+(<code>["number","null"]</code>, <code>["string","null"]</code>) — so responses are guaranteed well-formed and no
+defensive parsing is needed.</p>
+<blockquote><strong>Division of labour.</strong> The model only ever <em>parses</em>: structure, portions, names.
+Meal calories are estimated by the model from portion sizes. Exercise calories are <strong>never</strong> —
+<code>estimated_calories_burned</code> is always <code>null</code> in its reply, and the app prices the burn locally.</blockquote>
+
+<pre><code>// meal — "two plates of jollof rice with two pieces of fried chicken"
+{
+  "entry_type": "meal",
+  "summary": "Jollof rice with 2 pieces fried chicken and fried plantain",
+  "meal_type": "lunch",
+  "items": [
+    { "name": "Jollof Rice",    "quantity": "2 plates", "calories": 700,
+      "protein_g": 14, "carbs_g": 110, "fat_g": 20 },
+    { "name": "Fried Chicken",  "quantity": "2 pieces", "calories": 400,
+      "protein_g": 38, "carbs_g": 0,   "fat_g": 22 }
+  ],
+  "total_calories": 1100, "total_protein_g": 52,
+  "total_carbs_g": 110,   "total_fat_g": 42
+}
+
+// exercise — "5 knee press-ups and 5 dips"  (burn priced locally, not here)
+{
+  "entry_type": "exercise",
+  "summary": "5 knee press-ups and 5 dips",
+  "exercises": [
+    { "name": "Knee Press-ups", "sets": 1, "reps": 5,
+      "duration_minutes": null, "estimated_calories_burned": null },
+    { "name": "Dips", "sets": 1, "reps": 5,
+      "duration_minutes": null, "estimated_calories_burned": null }
+  ]
+}</code></pre>
+<p class="small">The top-level <code>activity</code> / <code>duration_minutes</code> /
+<code>estimated_calories_burned</code> fields are a legacy shape mirroring the first array entry; the
+<code>exercises</code> array is the source of truth for what gets logged.</p>
+
+<h3 class="brk">4.3 Exercise burn engine (deterministic)</h3>
+<p>Implemented in <code>lib/utils/exercise_math.dart</code> — pure math, no LLM, no I/O.</p>
+<h4>Method 1 — mechanical work (reps win)</h4>
+<pre><code>work (J) = mass(kg) × 9.81 × vertical displacement(m) × reps
+kcal     = work (J) ÷ (4,184 × 0.22)     ← 4,184 J/kcal, ~22% muscular efficiency</code></pre>
+<p>Displacement constants: dips <strong>0.40 m</strong> × full bodyweight · pull-ups <strong>0.50 m</strong> × full ·
+push-ups <strong>0.25 m</strong> × ~65% (hands carry the rest) · squats &amp; lunges <strong>0.45 m</strong> × full ·
+unknown movements a conservative <strong>0.40 m</strong> × full.</p>
+<h4>Method 2 — MET on precise seconds (duration only)</h4>
+<pre><code>kcal = MET × 3.5 × weight(kg) ÷ 200 × duration(minutes)</code></pre>
+<p>MET defaults to <strong>8.0</strong> (vigorous calisthenics, Compendium of Physical Activities), with per-activity
+values for common cardio (running ≈ 9.8, brisk walk ≈ 4.3, cycling ≈ 7.5). Duration is priced on exact minutes —
+never rounded up to a minimum session block.</p>
+<div class="box">
+  <h4>Verification</h4>
+  <p style="margin:0" class="small">20 bodyweight dips at 87 kg → <code>87 × 9.81 × 0.4 × 20 = 6,828 J</code> →
+  <strong>≈ 7.4 kcal</strong>, inside the 6–10 kcal sanity band (MET for a 45 s set ≈ 9.1 kcal). A single 20-rep set
+  must never reach 20 kcal; <code>maxKcalPerSet</code> caps every set as a guard against mis-parsed reps.
+  When bodyweight is unknown the burn is <strong>zero</strong>, never an invented number. Mirrored in
+  <code>test/exercise_math_test.dart</code>.</p>
+</div>
+
+<h3>4.4 Data model</h3>
+<table>
+  <tr><th style="width:15%">Schema</th><th>Tables &amp; columns</th></tr>
+  <tr><td><strong>v1</strong></td><td><code>logs</code>: id, timestamp, type (meal/exercise), summary, calories, protein_g, carbs_g, fat_g, raw_transcript, items (JSON array — food items for meals, exercise items for workouts)</td></tr>
+  <tr><td><strong>v2</strong></td><td><code>weigh_ins</code> (id, date, weight_kg, note) · <code>app_settings</code> KV (maintenance_kcal, reminder_enabled, reminder_time, memory_enabled, target_custom, height_cm, birthday, sex, activity_level, profile_completed) · <code>chat_messages</code> (id, role, content, created_at) · <code>memories</code> (id, topic, content, category, source, created_at, updated_at, active — unique active index on topic for latest-wins upsert) · <code>exercise_recommendations</code> (id, name, description, muscle_groups JSON, sets, reps, rest_seconds, duration_minutes, difficulty, plan_name, source_chat_id, created_at, archived)</td></tr>
+  <tr><td><strong>v3</strong></td><td><code>logs</code> gains <code>meal_type</code> (legacy rows default to <code>meal</code>) · new <code>day_maintenance</code> (day = local-midnight millis PK → maintenance_kcal), written whenever a log is added</td></tr>
+  <tr><td><strong>v4</strong></td><td><code>logs</code> gains nullable <code>sets</code>, <code>reps</code>, <code>duration_minutes</code> — the structured context each burn was computed from</td></tr>
+</table>
+<p class="small">Legacy handling: <code>app_settings</code> rows predating <code>target_custom</code> have the mode
+inferred; legacy <code>age</code> values are synthesised into a birthday on load. Secrets (key, vocabulary) live in the
+platform secure store and never enter SQLite or a backup file.</p>
+
+<h2>5. Non-Functional Requirements</h2>
+<table>
+  <tr><th style="width:22%">Area</th><th>Requirement</th></tr>
+  <tr><td>Latency</td><td>The two-stage pipeline (transcribe → structured parse) completes in <strong>under 4 seconds</strong> on a normal mobile connection.</td></tr>
+  <tr><td>Transcription precision</td><td>Non-Western, regional and local culinary names are handled via direct OpenAI transcription plus vocabulary hints — explicitly not native device recognizers.</td></tr>
+  <tr><td>Offline behaviour</td><td>The database is offline-first: viewing, editing, deleting, weigh-ins, streaks and budgets all work with no network. Only new voice/text parsing and the coach require connectivity.</td></tr>
+  <tr><td>Privacy</td><td>No backend, no analytics, no account. Outbound traffic goes exclusively to official OpenAI endpoints. Coach context (digest + memories + saved exercises) travels only while chatting.</td></tr>
+  <tr><td>Credential safety</td><td>The key never appears in the UI after saving, never enters SQLite, and never enters an exported backup.</td></tr>
+  <tr><td>Data durability</td><td>Full JSON export/import round-trips every table the wipe clears, so a reinstall or signing-key change is survivable.</td></tr>
+  <tr><td>Accessibility</td><td>Visible keyboard focus · ≥44 dp touch targets · screen-reader summaries on the Day's Wave · <code>prefers-reduced-motion</code> respected (the peak draw-in animation is skipped).</td></tr>
+  <tr><td>Resilience</td><td>Reminders survive reboot and app-kill via boot receiver and re-arm-on-launch. Strict schemas guarantee parseable model output.</td></tr>
+  <tr><td>Cost</td><td>Per-log cost is the user's own OpenAI spend; extra calls are gated (memory distillation every ~4 exchanges; exercise extraction keyword-gated).</td></tr>
+</table>
+
+<h3>5.1 Quality bar</h3>
+<p>Unit and widget tests cover the dashboard empty state, the record sheet's settings gate, the BYOK form, macro
+aggregation, add/delete persistence, the v2 schema, streaks, the coach context digest, the strict-schema OpenAI
+parsing and extraction methods, the Month and Coach tabs, calorie and exercise math, adaptive/smart target sync,
+period totals, the entry editor, backup round-trip, unit conversion and reminder logic — plus an integration test
+for the edit flow. <code>flutter test</code> is the gate; <code>tool/ship.sh</code> drives release builds.</p>
+
+<h2 class="brk">6. Success Metrics</h2>
+<div class="kpi">
+  <div><b>&lt;15s</b><span>meal logged, end to end</span></div>
+  <div><b>&lt;4s</b><span>voice → parsed card</span></div>
+  <div><b>≥5/7</b><span>days logged per week</span></div>
+  <div><b>&lt;10%</b><span>entries needing edit</span></div>
+</div>
+<table>
+  <tr><th style="width:30%">Metric</th><th>Definition &amp; target</th></tr>
+  <tr><td>Time to log</td><td>App open → entry saved. Target &lt; 15 s for a voice meal.</td></tr>
+  <tr><td>Pipeline latency</td><td>Release of the record button → confirm card rendered. Target &lt; 4 s.</td></tr>
+  <tr><td>Logging adherence</td><td>Days with ≥1 entry per week. Target ≥ 5/7 sustained past week 4 — the point where mainstream trackers lose the user.</td></tr>
+  <tr><td>Parse quality</td><td>Share of saved entries subsequently edited. Target &lt; 10%; a rising number points at either transcription or portion estimation.</td></tr>
+  <tr><td>Transcription accuracy</td><td>Regional dish names correctly transcribed on a fixed spoken test set, with and without vocabulary hints.</td></tr>
+  <tr><td>Target trustworthiness</td><td>Share of users still on the automatic target (rather than a manual override) after 30 days.</td></tr>
+  <tr><td>Data safety</td><td>Zero reports of a lost history after reinstall; zero credential exposure incidents.</td></tr>
+</table>
+<p class="small">Note: with no backend and no analytics by design, these are measured through the owner's own use and
+manual test passes, not telemetry. That is an accepted consequence of the privacy stance.</p>
+
+<h2>7. Risks &amp; Mitigations</h2>
+<table>
+  <tr><th style="width:30%">Risk</th><th>Mitigation</th></tr>
+  <tr><td><strong>BYOK is a hard onboarding step.</strong> Obtaining and pasting an OpenAI key filters out most mainstream users.</td><td>Accepted — it is what makes zero-backend and zero-subscription possible. Mitigated by a clear no-key state that routes straight to Settings, and by the app being fully usable offline for viewing and editing once data exists.</td></tr>
+  <tr><td><strong>LLM calorie estimates are approximate.</strong> Portion inference from "two plates" carries real error.</td><td>Confirm-before-save, in-place editing with re-parse, and quantity scaling. The adaptive target additionally self-corrects against observed weight change, so systematic estimation bias washes out of the number that matters.</td></tr>
+  <tr><td><strong>Model or API drift.</strong> A deprecated model or changed Structured Outputs behaviour breaks parsing.</td><td>Strict schemas with full <code>required</code> coverage; both <code>gpt-transcribe</code> and <code>whisper-1</code> supported; parsing isolated behind <code>openai_service.dart</code> with direct tests.</td></tr>
+  <tr><td><strong>Device loss or forced uninstall.</strong> No server copy exists.</td><td>F11 JSON export/import covering every wiped table, with a versioned format independent of the schema.</td></tr>
+  <tr><td><strong>Android reminder fragility.</strong> OEM battery managers and the v16 receiver change silently kill schedules.</td><td>App-declared <code>ScheduledNotificationReceiver</code>, boot receiver, inexact scheduling (no exact-alarm permission), and re-arm on every launch, resume and log mutation.</td></tr>
+  <tr><td><strong>Runaway API cost.</strong> Chat plus per-log calls are billed to the user.</td><td>Keyword-gated exercise extraction, memory distillation only every ~4 exchanges, <code>gpt-4o-mini</code> for parsing, and no background polling.</td></tr>
+  <tr><td><strong>Coach overreach.</strong> A chat model giving nutrition advice can produce unsafe suggestions.</td><td>Positioned as motivational and planning support, not clinical advice; all numbers it reasons over are the user's own, and the memory layer is fully user-editable and switchable.</td></tr>
+</table>
+
+<h2>8. Release Status &amp; Roadmap</h2>
+<table>
+  <tr><th style="width:16%">Milestone</th><th style="width:16%">Status</th><th>Scope</th></tr>
+  <tr><td><strong>v1.0.4</strong><br><span class="small">current</span></td><td><span class="pill built">SHIPPED</span></td><td>F1–F11 complete: voice + typed logging, macros, deterministic burn engine, dashboard with the Day's Wave, month calendar &amp; streaks, weight tracking with adaptive target sync, coach chat with memory, auto-saved exercise library, gap-aware reminders, first-run profile, backup/restore/reset. Schema v4.</td></tr>
+  <tr><td><strong>v1.1</strong></td><td><span class="pill plan">NEXT</span></td><td>Hardening the edit and backup flows in real use; broadening the integration-test suite beyond the edit flow; expanded regional vocabulary defaults; per-item nutrition confidence surfaced in the UI.</td></tr>
+  <tr><td><strong>Later</strong></td><td><span class="pill plan">CONSIDERED</span></td><td>Flutter web target · HealthKit / Google Fit import for steps and workouts · photo-assisted portion estimation · alternative model providers behind the same BYOK abstraction.</td></tr>
+</table>
+
+<h3>8.1 Open questions</h3>
+<ul>
+  <li>Should meal-calorie estimation also self-correct per food item (learning that <em>this</em> user's "plate of jollof"
+  runs ~15% under the model's default), or is the target-level adaptive correction in F10 sufficient?</li>
+  <li>Does the coach warrant a scheduled proactive nudge (weekly review), or does that conflict with the
+  no-background-work, cost-conscious stance?</li>
+  <li>Is encrypted backup worth adding so the key <em>could</em> travel, or is hand re-entry the right permanent trade?</li>
+</ul>
+
+<p class="small" style="margin-top:26px;border-top:1px solid var(--rule);padding-top:8px">
+Weight Buddy PRD · v1.0.4 · 31 August 2026 · single-owner project, no external distribution commitments.
+Implementation reference: <code>docs/main.md</code> in the repository.</p>
+
+</body></html>

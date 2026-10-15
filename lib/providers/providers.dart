@@ -95,6 +95,8 @@ class DayLogsController extends AsyncNotifier<List<LogEntry>> {
     final settings = await ref.read(appSettingsProvider.future);
     // Snapshot the target in effect today so this day is judged by it later.
     await db.insertLog(entry, maintenanceKcal: settings.maintenanceKcal);
+    // Cached month/week/streak totals must re-read the ledger.
+    ref.read(ledgerRevisionProvider.notifier).bump();
     // A session that crossed midnight shouldn't keep yesterday's anchor.
     ref.read(nowProvider.notifier).refresh();
     ref.invalidateSelf();
@@ -107,8 +109,26 @@ class DayLogsController extends AsyncNotifier<List<LogEntry>> {
     if (id == null) return;
     final db = await ref.read(databaseProvider.future);
     await db.deleteLog(id);
+    // Cached month/week/streak totals must re-read the ledger.
+    ref.read(ledgerRevisionProvider.notifier).bump();
     ref.invalidateSelf();
     // Deleting today's last entry puts the nudge back on duty.
+    await ref.read(rearmDailyReminderProvider)(db: db);
+  }
+
+  /// In-place edit: the row keeps its id and timestamp (see
+  /// [AppDatabase.updateLog]), so the timeline position and the day's
+  /// maintenance snapshot stay intact. Same ledger/nudge bookkeeping as add
+  /// and delete.
+  Future<void> edit(LogEntry entry) async {
+    final id = entry.id;
+    if (id == null) return;
+    final db = await ref.read(databaseProvider.future);
+    await db.updateLog(entry);
+    // Cached month/week/streak totals must re-read the ledger.
+    ref.read(ledgerRevisionProvider.notifier).bump();
+    ref.invalidateSelf();
+    // An edited day may now be complete (or incomplete) for the nudge.
     await ref.read(rearmDailyReminderProvider)(db: db);
   }
 }
@@ -349,6 +369,8 @@ Future<double?> syncMaintenanceFromData(Ref ref) async {
   // and the Today screen's LEFT all measure against the same new target
   // (past days keep their own snapshots untouched).
   await db.setDayMaintenance(weighIns.first.date, rounded);
+  // The weigh-in day's snapshot changed — refresh any cached month/week data.
+  ref.read(ledgerRevisionProvider.notifier).bump();
   return rounded;
 }
 
@@ -371,6 +393,7 @@ double? _formulaMaintenance(AppSettingsData settings, double weightKg) {
 /// own weigh-in trend and food logs. Null until there is enough logging to
 /// trust it (see [AdaptiveMath]).
 final observedMaintenanceProvider = FutureProvider<double?>((ref) async {
+  ref.watch(ledgerRevisionProvider);
   final db = await ref.watch(databaseProvider.future);
   final now = DateTime.now();
   final start = now.subtract(const Duration(days: 60));
@@ -394,9 +417,24 @@ final observedMaintenanceProvider = FutureProvider<double?>((ref) async {
 // Month calendar
 // ---------------------------------------------------------------------------
 
+/// Bumped on every write that changes the calorie ledger — a new or deleted
+/// log entry, or a refreshed per-day maintenance snapshot. The month/week/
+/// streak providers below watch it so they re-read the database instead of
+/// serving stale cached numbers until the app restarts.
+final ledgerRevisionProvider =
+    NotifierProvider<LedgerRevision, int>(LedgerRevision.new);
+
+class LedgerRevision extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state++;
+}
+
 /// Daily totals for the month containing [month], keyed by "yyyy-MM-dd".
 final monthTotalsProvider =
     FutureProvider.family<Map<String, LogTotals>, DateTime>((ref, month) async {
+      ref.watch(ledgerRevisionProvider);
       final db = await ref.watch(databaseProvider.future);
       final start = DateTime(month.year, month.month, 1);
       final end = DateTime(month.year, month.month + 1, 1);
@@ -416,6 +454,7 @@ final monthTotalsProvider =
 /// "yyyy-MM-dd". Days without a snapshot (nothing logged then) are absent.
 final monthMaintenanceProvider =
     FutureProvider.family<Map<String, double>, DateTime>((ref, month) async {
+      ref.watch(ledgerRevisionProvider);
       final db = await ref.watch(databaseProvider.future);
       final start = DateTime(month.year, month.month, 1);
       final end = DateTime(month.year, month.month + 1, 1);
@@ -434,6 +473,7 @@ String _dayKey(DateTime day) =>
 /// Logging + on-plan streaks over the last 90 days, recomputed when the
 /// maintenance target changes.
 final streakProvider = FutureProvider<Streaks>((ref) async {
+  ref.watch(ledgerRevisionProvider);
   final db = await ref.watch(databaseProvider.future);
   final today = DateTime.now();
   final start = today.subtract(const Duration(days: 90));
@@ -536,6 +576,7 @@ class NowController extends Notifier<DateTime> {
 final periodTotalsProvider =
     FutureProvider.family<PeriodTotals, (DateTime, DateTime)>(
   (ref, range) async {
+    ref.watch(ledgerRevisionProvider);
     final (start, end) = range;
     final today = ref.watch(nowProvider);
     final db = await ref.watch(databaseProvider.future);
@@ -786,18 +827,36 @@ final rearmDailyReminderProvider =
           }
           final todayLogs = await database.logsForDay(DateTime.now());
           final message = nudgeMessage(todayLogs);
-          if (message == null) {
-            // The day looks complete — nothing left to nudge about.
-            await reminder.cancel();
-            return;
-          }
+          // A complete day gets no nudge today, but the daily repeat is kept
+          // armed for tomorrow — cancelling outright would kill reminders
+          // until the next time the app happens to be opened.
           await reminder.scheduleDaily(
             hour: settings.reminderTime.hour,
             minute: settings.reminderTime.minute,
-            message: message,
+            message: message ?? defaultNudgeMessage,
+            skipToday: message == null,
           );
         } catch (_) {
           // Best-effort: reminders must never break the app.
         }
+      };
+    });
+
+/// Call after anything rewrites the whole database at once (restore, reset,
+/// demo seed). One list of every DB-backed cache, so a new provider only has
+/// to be added here — not to each bulk-write path — to stay fresh.
+final refreshAfterDataReplacedProvider =
+    Provider<Future<void> Function({AppDatabase? db})>((ref) {
+      return ({AppDatabase? db}) async {
+        ref.read(ledgerRevisionProvider.notifier).bump();
+        ref.invalidate(appSettingsProvider);
+        ref.invalidate(settingsProvider);
+        ref.invalidate(dayLogsProvider);
+        ref.invalidate(weighInsProvider);
+        ref.invalidate(chatMessagesProvider);
+        ref.invalidate(memoriesProvider);
+        ref.invalidate(exercisesProvider);
+        // Reminder on/off and today's logs may both have changed underneath.
+        await ref.read(rearmDailyReminderProvider)(db: db);
       };
     });

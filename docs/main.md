@@ -79,6 +79,7 @@ A personal, lightweight mobile/web application that allows a single user to log 
 - **Day's Wave (signature):** Today's entries are drawn as a waveform — each peak is one entry, height follows calories, colour follows type (meal / exercise), position follows time of day. Tapping a peak reveals its summary; an empty day is a flatline invitation to log.
 - **Log Timeline:** Chronological feed of meals (with macro details) and workouts logged for the active date.
 - Delete/remove capability for individual log entries.
+- **Edit & resend:** every timeline entry (and the details sheet) opens an editor — correct the words and **re-parse with AI**, or fix by hand (quantities scale calories/macros; add or remove items; meal type). Saving updates the row **in place** (same id and timestamp), so the timeline position and the day's maintenance snapshot stay intact — the fix for a wrong AI measurement or a forgotten item without re-dictating from scratch. At the confirm stage a **“fix the words”** action returns to the typing view pre-filled instead of discarding.
 
 ### Feature 5: Month Calendar, Maintenance Colors & Streaks
 
@@ -148,8 +149,9 @@ A personal, lightweight mobile/web application that allows a single user to log 
 - Settings → Daily reminder: on/off switch + time picker.
 - `flutter_local_notifications` with `timezone` (device-local IANA zone via `flutter_timezone`).
 - **Inexact daily scheduling** (`AndroidScheduleMode.inexactAllowWhileIdle`) — no exact-alarm permission needed on Android.
-- **Gap-aware nudge:** at every re-arm point (app launch, foreground resume, after each log add/delete, settings change) the message is chosen from today's entries — nothing logged → "What did you eat today?"; breakfast/lunch/dinner missing (snacks never count) → "Anything else today? (…)"; meals complete but no workout → "Did you get your workout in?"; a complete day or a switched-off reminder → cancelled, silent.
-- **Re-armed on every app launch** (Android does not persist schedules across reboots).
+- **Gap-aware nudge:** at every re-arm point (app launch, foreground resume, after each log add/delete, settings change) the message is chosen from today's entries — nothing logged → "What did you eat today?"; breakfast/lunch/dinner missing (snacks never count) → "Anything else today? (…)"; meals complete but no workout → "Did you get your workout in?"; a complete day → silent today but the daily repeat is re-armed for tomorrow (never cancelled, or the reminder would die until the app is next opened); a switched-off reminder → cancelled.
+- **Re-armed on every app launch**, plus a boot receiver (`ScheduledNotificationBootReceiver` + `RECEIVE_BOOT_COMPLETED`) so a reboot does not silently drop the schedule.
+- **Android manifest:** `flutter_local_notifications` v16+ no longer declares its own receivers — the app must declare `ScheduledNotificationReceiver`, or scheduled alarms fire into nothing and no reminder is ever shown.
 - Runtime permission flow for iOS and Android 13+.
 
 ### Feature 10: First-run profile & maintenance estimate

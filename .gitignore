@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Release signing — back these up off-machine; they exist nowhere else.
+android/key.properties
+android/*.jks
+tool/.firebase-app-id
+
+dist/

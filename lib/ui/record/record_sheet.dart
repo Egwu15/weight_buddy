@@ -15,6 +15,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
 import '../widgets/macro_pill.dart';
+import '../widgets/meal_edit_parts.dart';
 
 /// Results the record sheet can pop with, so the launcher can react.
 const kRecordSheetLogged = 'logged';
@@ -159,8 +160,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
     // latest weigh-in so 20 dips can never log a workout-sized number.
     final weighIns = ref.read(weighInsProvider).value ?? const [];
     final weightKg = weighIns.isEmpty ? null : weighIns.first.weightKg;
-    final parsed =
-        await service.parseTranscript(text, weightKg: weightKg);
+    final parsed = await service.parseTranscript(text, weightKg: weightKg);
     if (!mounted) return;
     _transcript = text;
     _typed = true;
@@ -232,6 +232,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
         ),
         _Stage.type => _Tight(
           child: _TypeView(
+            initialText: _transcript,
             onBack: () => setState(() => _stage = _Stage.idle),
             onSubmit: _submitTyped,
           ),
@@ -249,6 +250,11 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
           sourceLabel: _typed ? 'You wrote:' : 'The words I heard:',
           onSave: (edited) => _save(edited),
           onDiscard: () => Navigator.of(context).pop(),
+          onEditText: () => setState(() {
+            // Back to the keyboard, words intact — fix and re-parse.
+            _typed = true;
+            _stage = _Stage.type;
+          }),
         ),
         _Stage.needsKey => _Tight(
           child: _NeedsKeyView(
@@ -398,19 +404,26 @@ class _IdleView extends StatelessWidget {
 }
 
 /// Quiet-day fallback: type what you ate or how you moved instead of
-/// speaking, and the same GPT pipeline parses it.
+/// speaking, and the same GPT pipeline parses it. [initialText] pre-fills the
+/// box so “fix the words” round-trips from the confirm stage keep what was
+/// already said.
 class _TypeView extends StatefulWidget {
-  const _TypeView({required this.onBack, required this.onSubmit});
+  const _TypeView({
+    required this.onBack,
+    required this.onSubmit,
+    this.initialText = '',
+  });
 
   final VoidCallback onBack;
   final ValueChanged<String> onSubmit;
+  final String initialText;
 
   @override
   State<_TypeView> createState() => _TypeViewState();
 }
 
 class _TypeViewState extends State<_TypeView> {
-  final _controller = TextEditingController();
+  late final _controller = TextEditingController(text: widget.initialText);
   bool _submitting = false;
 
   @override
@@ -600,12 +613,18 @@ class _ConfirmView extends StatefulWidget {
     required this.sourceLabel,
     required this.onSave,
     required this.onDiscard,
+    required this.onEditText,
   });
 
   final ParsedLog parsed;
   final String sourceLabel;
   final ValueChanged<ParsedLog> onSave;
   final VoidCallback onDiscard;
+
+  /// Jumps back to the typing view pre-filled with the transcript, so the
+  /// user can fix the words and re-parse instead of discarding and starting
+  /// over.
+  final VoidCallback onEditText;
 
   @override
   State<_ConfirmView> createState() => _ConfirmViewState();
@@ -614,8 +633,8 @@ class _ConfirmView extends StatefulWidget {
 class _ConfirmViewState extends State<_ConfirmView> {
   late final List<MealItem> _items = List.of(widget.parsed.items);
   late MealType _mealType = widget.parsed.mealType;
-  late final List<TextEditingController> _qtyControllers = [
-    for (final item in _items) TextEditingController(text: item.quantity),
+  late final List<MealQuantityController> _qtyControllers = [
+    for (final item in _items) MealQuantityController(item),
   ];
 
   @override
@@ -631,140 +650,142 @@ class _ConfirmViewState extends State<_ConfirmView> {
   double get _carbs => _items.fold(0, (s, i) => s + i.carbsG);
   double get _fat => _items.fold(0, (s, i) => s + i.fatG);
 
-  double _factor(String raw, MealItem item) {
-    final m = RegExp(r'\d+(?:\.\d+)?').firstMatch(raw);
-    if (m == null) return 1;
-    final oldM = RegExp(r'\d+(?:\.\d+)?').firstMatch(item.quantity);
-    final oldV = oldM == null ? 1.0 : double.tryParse(oldM.group(0)!) ?? 1.0;
-    final newV = double.tryParse(m.group(0)!) ?? oldV;
-    if (oldV <= 0) return 1;
-    return newV / oldV;
-  }
-
   void _onQtyChanged(int index, String raw) {
-    final factor = _factor(raw, _items[index]);
-    if (factor <= 0) return;
-    final old = _items[index];
-    setState(() {
-      _items[index] = MealItem(
-        name: old.name,
-        quantity: raw,
-        calories: old.calories * factor,
-        proteinG: old.proteinG * factor,
-        carbsG: old.carbsG * factor,
-        fatG: old.fatG * factor,
-      );
-    });
+    final scaled = _qtyControllers[index].scaledTo(raw);
+    if (scaled == null) return;
+    setState(() => _items[index] = scaled);
   }
-
-  static String _mealLabel(MealType type) => switch (type) {
-        MealType.breakfast => 'Breakfast',
-        MealType.lunch => 'Lunch',
-        MealType.dinner => 'Dinner',
-        MealType.snack => 'Snack',
-        MealType.meal => 'Meal',
-      };
 
   @override
   Widget build(BuildContext context) {
     final parsed = widget.parsed;
     final isMeal = parsed.type == EntryType.meal;
 
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            isMeal ? 'Does this look right?' : 'Check the workout',
-            style: AppText.headline(),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '${widget.sourceLabel} “${widget.parsed.summary}”',
-            style: AppText.bodyMuted(fontSize: 13),
-          ),
-          if (isMeal) ...[
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Flexible(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (final type in MealType.values)
-                  if (type != MealType.meal)
-                    ChoiceChip(
-                      label: Text(_mealLabel(type)),
-                      selected: _mealType == type,
-                      onSelected: (_) => setState(() => _mealType = type),
-                      backgroundColor: AppColors.barkRaised,
-                      selectedColor: AppColors.jollof,
-                      labelStyle: AppText.bodyMuted(
-                          fontSize: 13,
-                          color: _mealType == type
-                              ? AppColors.pot
-                              : AppColors.bone),
-                      side: const BorderSide(color: AppColors.ember),
+                Text(
+                  isMeal ? 'Does this look right?' : 'Check the workout',
+                  style: AppText.headline(),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${widget.sourceLabel} “${widget.parsed.summary}”',
+                  style: AppText.bodyMuted(fontSize: 13),
+                ),
+                const SizedBox(height: 2),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: widget.onEditText,
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      color: AppColors.smoke,
+                      size: 16,
                     ),
+                    label: const Text(
+                      'The words came out wrong — fix and re-parse',
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.smoke,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
+                if (isMeal) ...[
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final type in MealType.values)
+                        if (type != MealType.meal)
+                          ChoiceChip(
+                            label: Text(mealTypeLabel(type)),
+                            selected: _mealType == type,
+                            onSelected: (_) => setState(() => _mealType = type),
+                            backgroundColor: AppColors.barkRaised,
+                            selectedColor: AppColors.jollof,
+                            labelStyle: AppText.bodyMuted(
+                              fontSize: 13,
+                              color: _mealType == type
+                                  ? AppColors.pot
+                                  : AppColors.bone,
+                            ),
+                            side: const BorderSide(color: AppColors.ember),
+                          ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 18),
+                if (isMeal) ...[
+                  for (var i = 0; i < _items.length; i++)
+                    _ItemRow(
+                      index: i,
+                      item: _items[i],
+                      controller: _qtyControllers[i],
+                      onChanged: (raw) => _onQtyChanged(i, raw),
+                    ),
+                  const SizedBox(height: 16),
+                  MealTotalsRow(
+                    calories: _calories,
+                    protein: _protein,
+                    carbs: _carbs,
+                    fat: _fat,
+                  ),
+                ] else ...[
+                  for (final exercise in parsed.exerciseList)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _ExerciseCard(exercise: exercise),
+                    ),
+                ],
               ],
             ),
-          ],
-          const SizedBox(height: 18),
-          if (isMeal) ...[
-            for (var i = 0; i < _items.length; i++)
-              _ItemRow(
-                index: i,
-                item: _items[i],
-                controller: _qtyControllers[i],
-                onChanged: (raw) => _onQtyChanged(i, raw),
-              ),
-            const SizedBox(height: 16),
-            _TotalsRow(
-              calories: _calories,
-              protein: _protein,
-              carbs: _carbs,
-              fat: _fat,
-            ),
-          ] else ...[
-            for (final exercise in parsed.exerciseList)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _ExerciseCard(exercise: exercise),
-              ),
-          ],
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: widget.onDiscard,
-                  child: const Text('Discard'),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: FilledButton.icon(
-                  onPressed: () => widget.onSave(
-                    isMeal
-                        ? ParsedLog(
-                            type: EntryType.meal,
-                            summary: parsed.summary,
-                            items: _items,
-                            calories: _calories,
-                            proteinG: _protein,
-                            carbsG: _carbs,
-                            fatG: _fat,
-                            mealType: _mealType,
-                          )
-                        : parsed,
-                  ),
-                  icon: const Icon(Icons.check_rounded, size: 20),
-                  label: const Text('Save'),
-                ),
-              ),
-            ],
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: widget.onDiscard,
+                child: const Text('Discard'),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: FilledButton.icon(
+                onPressed: () => widget.onSave(
+                  isMeal
+                      ? ParsedLog(
+                          type: EntryType.meal,
+                          summary: parsed.summary,
+                          items: _items,
+                          calories: _calories,
+                          proteinG: _protein,
+                          carbsG: _carbs,
+                          fatG: _fat,
+                          mealType: _mealType,
+                        )
+                      : parsed,
+                ),
+                icon: const Icon(Icons.check_rounded, size: 20),
+                label: const Text('Save'),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -852,68 +873,6 @@ class _ItemRow extends StatelessWidget {
   }
 }
 
-class _TotalsRow extends StatelessWidget {
-  const _TotalsRow({
-    required this.calories,
-    required this.protein,
-    required this.carbs,
-    required this.fat,
-  });
-
-  final double calories;
-  final double protein;
-  final double carbs;
-  final double fat;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.ember),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text('TOTAL', style: AppText.label()),
-              const Spacer(),
-              Text(
-                '${Formatters.kcal(calories)} kcal',
-                style: AppText.dataL(color: AppColors.jollof),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 12,
-            runSpacing: 6,
-            children: [
-              MacroPill(
-                label: 'PROTEIN',
-                value: '${Formatters.grams(protein)}g',
-                color: MacroPill.proteinColor,
-              ),
-              MacroPill(
-                label: 'CARBS',
-                value: '${Formatters.grams(carbs)}g',
-                color: MacroPill.carbsColor,
-              ),
-              MacroPill(
-                label: 'FAT',
-                value: '${Formatters.grams(fat)}g',
-                color: MacroPill.fatColor,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ExerciseCard extends StatelessWidget {
   const _ExerciseCard({required this.exercise});
 
@@ -921,20 +880,6 @@ class _ExerciseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final duration = exercise.durationMinutes;
-    // Natural speech often gives reps without sets ("10 pressups") — show
-    // whatever structure the speaker actually gave.
-    final parts = <String>[
-      if (exercise.sets != null && exercise.reps != null)
-        '${exercise.sets} × ${exercise.reps} reps'
-      else if (exercise.reps != null)
-        '${exercise.reps} reps',
-      if (duration != null) '${Formatters.grams(duration)} min',
-    ];
-    final subtitle = parts.isEmpty
-        ? '${Formatters.kcal(exercise.caloriesBurned)} kcal burned'
-        : '${parts.join(' · ')} · '
-            '${Formatters.kcal(exercise.caloriesBurned)} kcal burned';
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -956,7 +901,7 @@ class _ExerciseCard extends StatelessWidget {
                 Text(exercise.name, style: AppText.title()),
                 const SizedBox(height: 2),
                 Text(
-                  subtitle,
+                  exerciseSubtitle(exercise),
                   style: AppText.dataS(color: AppColors.smoke),
                 ),
               ],

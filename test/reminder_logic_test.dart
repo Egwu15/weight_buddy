@@ -8,6 +8,7 @@ import 'package:weight_buddy/data/reminder_service.dart';
 import 'package:weight_buddy/models/app_settings_data.dart';
 import 'package:weight_buddy/models/log_entry.dart';
 import 'package:weight_buddy/providers/providers.dart';
+import 'package:weight_buddy/utils/nudge_message.dart';
 
 const _on = AppSettingsData(
   reminderEnabled: true,
@@ -23,9 +24,12 @@ class _FakeReminderService extends ReminderService {
   Future<void> scheduleDaily({
     required int hour,
     required int minute,
-    String message = 'Time to log — what did you eat today?',
+    String message = defaultNudgeMessage,
+    bool skipToday = false,
   }) async {
-    calls.add('schedule:$hour:${minute.toString().padLeft(2, '0')}:$message');
+    final prefix = skipToday ? 'schedule-tomorrow' : 'schedule';
+    calls.add(
+        '$prefix:$hour:${minute.toString().padLeft(2, '0')}:$message');
   }
 
   @override
@@ -135,7 +139,7 @@ void main() {
     expect(reminder.calls, ['schedule:20:00:Did you get your workout in?']);
   });
 
-  test('a complete day (meals + workout) stays silent', () async {
+  test('a complete day stays silent today but re-arms for tomorrow', () async {
     final (db, reminder, container) = await setUp(_on, [
       _entry(EntryType.meal, mealType: MealType.breakfast),
       _entry(EntryType.meal, mealType: MealType.lunch),
@@ -146,7 +150,8 @@ void main() {
 
     await rearm(container, db);
 
-    expect(reminder.calls, ['cancel']);
+    expect(reminder.calls,
+        ['schedule-tomorrow:20:00:Time to log — what did you eat today?']);
   });
 
   test('cancels when the reminder is switched off', () async {

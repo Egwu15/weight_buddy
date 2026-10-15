@@ -64,6 +64,69 @@ class ParsedLog {
   /// Parsed exercises, when the model returned the exercises array.
   final List<ParsedExercise> exercises;
 
+  /// Seeds a [ParsedLog] from an already-saved [LogEntry], so the editor can
+  /// reopen a logged meal or workout for fixing without re-dictating it.
+  ///
+  /// The mirror of [toEntries]: meals round-trip their items and meal type;
+  /// workouts round-trip their nested exercises; legacy single-exercise rows
+  /// (no `exerciseItems`, just the top-level fields) are wrapped back into the
+  /// exercises array so the editor treats every workout the same.
+  factory ParsedLog.fromEntry(LogEntry entry) {
+    if (entry.type == EntryType.meal) {
+      // Older saves could hold macros but no parsed items — give the editor
+      // one synthetic item so the meal stays adjustable instead of zeroing.
+      final items = entry.items.isEmpty
+          ? [
+              MealItem(
+                name: entry.summary,
+                quantity: '1',
+                calories: entry.calories,
+                proteinG: entry.proteinG,
+                carbsG: entry.carbsG,
+                fatG: entry.fatG,
+              ),
+            ]
+          : entry.items;
+      return ParsedLog(
+        type: entry.type,
+        summary: entry.summary,
+        items: items,
+        calories: entry.calories,
+        proteinG: entry.proteinG,
+        carbsG: entry.carbsG,
+        fatG: entry.fatG,
+        mealType: entry.mealType,
+      );
+    }
+    final exercises = entry.exerciseItems.isEmpty
+        ? [
+            ParsedExercise(
+              name: entry.summary,
+              sets: entry.sets,
+              reps: entry.reps,
+              durationMinutes: entry.durationMinutes,
+              caloriesBurned: entry.calories,
+            ),
+          ]
+        : [
+            for (final e in entry.exerciseItems)
+              ParsedExercise(
+                name: e.name,
+                sets: e.sets,
+                reps: e.reps,
+                durationMinutes: e.durationMinutes,
+                caloriesBurned: e.caloriesBurned,
+              ),
+          ];
+    return ParsedLog(
+      type: entry.type,
+      summary: entry.summary,
+      exercises: exercises,
+      calories: exercises.fold(0.0, (s, e) => s + e.caloriesBurned),
+      mealType: entry.mealType,
+    );
+  }
+
   /// The exercises array when present; otherwise the legacy single-exercise
   /// shape (the top-level activity/duration/calories).
   List<ParsedExercise> get exerciseList {

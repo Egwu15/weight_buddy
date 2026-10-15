@@ -2,6 +2,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
+import '../utils/nudge_message.dart';
+
 /// Daily local notifications that nudge the user to log.
 ///
 /// Scheduling is inexact (no exact-alarm permission needed on Android) and
@@ -62,16 +64,22 @@ class ReminderService {
 
   /// Schedules a daily reminder at [hour]:[minute] in the device's local
   /// time. Calling again replaces the existing schedule.
+  ///
+  /// [skipToday] pushes the first firing to tomorrow even when today's slot
+  /// has not passed yet. Callers use it when today is already fully logged:
+  /// the daily repeat stays armed for tomorrow instead of being cancelled,
+  /// so the reminder survives a day the user never reopens the app.
   Future<void> scheduleDaily({
     required int hour,
     required int minute,
-    String message = 'Time to log — what did you eat today?',
+    String message = defaultNudgeMessage,
+    bool skipToday = false,
   }) async {
     await _ensureInit();
     final now = tz.TZDateTime.now(tz.local);
     var scheduled =
         tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
-    if (!scheduled.isAfter(now)) {
+    if (skipToday || !scheduled.isAfter(now)) {
       scheduled = scheduled.add(const Duration(days: 1));
     }
     await _plugin.zonedSchedule(

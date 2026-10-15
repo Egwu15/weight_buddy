@@ -45,16 +45,13 @@ Future<void> _armDailyReminder() async {
 
     final todayLogs = await db.logsForDay(DateTime.now());
     final message = nudgeMessage(todayLogs);
-    if (message == null) {
-      // The day looks complete — nothing left to nudge about.
-      await service.cancel();
-      await db.close();
-      return;
-    }
+    // A complete day is skipped rather than cancelled, so the daily repeat
+    // still fires tomorrow even if the app is never reopened.
     await service.scheduleDaily(
       hour: int.tryParse(parts[0]) ?? 20,
       minute: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
-      message: message,
+      message: message ?? defaultNudgeMessage,
+      skipToday: message == null,
     );
     await db.close();
   } catch (_) {

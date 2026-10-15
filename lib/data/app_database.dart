@@ -23,6 +23,10 @@ class AppDatabase {
   static const _dbName = 'weight_buddy.db';
   static const _dbVersion = 4;
 
+  /// The schema version, exposed so backups can record what they were made
+  /// from and refuse a file written by a newer build.
+  static int get schemaVersion => _dbVersion;
+
   /// Opens (and migrates) the local database.
   ///
   /// Uses the active [databaseFactory] from sqflite, so tests can point it at
@@ -228,6 +232,20 @@ class AppDatabase {
 
   Future<void> deleteLog(int id) async {
     await _db.delete('logs', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Replaces every field of an existing log row in place, keeping its id and
+  /// timestamp — the timeline position and the day-maintenance snapshot stay
+  /// intact, so an edit is indistinguishable from the original row's history.
+  Future<void> updateLog(LogEntry entry) async {
+    final id = entry.id;
+    if (id == null) return;
+    await _db.update(
+      'logs',
+      entry.toMap(),
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   /// Records the maintenance target in effect for a local [day] (latest-wins),
@@ -470,18 +488,77 @@ class AppDatabase {
   // Whole-app wipe
   // ---------------------------------------------------------------------
 
+  /// Every row of [table], straight out of SQLite. Used by the backup export,
+  /// which deliberately works in raw column terms so a new column is carried
+  /// through without the export needing to know about it.
+  Future<List<Map<String, Object?>>> rawTableRows(String table) async {
+    return _db.query(table);
+  }
+
+  /// Wipes every table and re-inserts [rowsByTable] in one transaction, so a
+  /// failed restore leaves the previous data intact rather than half of each.
+  ///
+  /// Columns not present in the live schema are dropped (a backup from a newer
+  /// build restoring onto an older one). A row SQLite rejects (a hand-edited
+  /// file with a null in a NOT NULL column, say) is skipped rather than
+  /// failing the restore: losing one bad meal beats refusing a year of good
+  /// ones. Returns how many rows were skipped so the caller can say so.
+  Future<int> replaceAll(
+      Map<String, List<Map<String, Object?>>> rowsByTable) async {
+    var skipped = 0;
+    await _db.transaction((txn) async {
+      for (final table in dataTables) {
+        await txn.delete(table);
+      }
+      for (final entry in rowsByTable.entries) {
+        if (!dataTables.contains(entry.key)) continue;
+        final columns = await _columnsOf(txn, entry.key);
+        for (final row in entry.value) {
+          final filtered = <String, Object?>{
+            for (final e in row.entries)
+              if (columns.contains(e.key)) e.key: e.value,
+          };
+          if (filtered.isEmpty) continue;
+          try {
+            await txn.insert(entry.key, filtered,
+                conflictAlgorithm: ConflictAlgorithm.replace);
+          } on Object {
+            // A failed single-statement insert is rolled back on its own by
+            // SQLite; the surrounding transaction stays usable.
+            skipped++;
+          }
+        }
+      }
+    });
+    return skipped;
+  }
+
+  static Future<Set<String>> _columnsOf(
+      DatabaseExecutor txn, String table) async {
+    final info = await txn.rawQuery('PRAGMA table_info($table)');
+    return {for (final c in info) c['name'] as String};
+  }
+
+  /// Every table holding user data or settings. A full wipe clears exactly
+  /// these and a backup carries exactly these, so the two can't drift apart.
+  static const dataTables = <String>[
+    'logs',
+    'weigh_ins',
+    'chat_messages',
+    'memories',
+    'exercise_recommendations',
+    'day_maintenance',
+    'app_settings',
+  ];
+
   /// Removes every user record and resets all settings to their fresh-install
   /// defaults: profile, maintenance target, reminder, memory switch and the
   /// demo marker all go, so the app presents exactly like a brand-new install.
   /// Secrets live in the platform secure store and are cleared separately.
   Future<void> wipeAllData() async {
-    await _db.delete('logs');
-    await _db.delete('weigh_ins');
-    await _db.delete('chat_messages');
-    await _db.delete('memories');
-    await _db.delete('exercise_recommendations');
-    await _db.delete('day_maintenance');
-    await _db.delete('app_settings');
+    for (final table in dataTables) {
+      await _db.delete(table);
+    }
   }
 
   Future<void> close() => _db.close();

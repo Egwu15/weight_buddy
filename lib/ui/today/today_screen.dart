@@ -12,6 +12,7 @@ import '../weigh/weight_card.dart';
 import '../weigh/weight_history_screen.dart';
 import '../widgets/days_wave.dart';
 import '../widgets/entry_details_sheet.dart';
+import '../widgets/entry_editor_sheet.dart';
 import '../widgets/ledger_card.dart';
 import '../widgets/macro_plate.dart';
 import '../widgets/record_dock.dart';
@@ -150,7 +151,12 @@ class TodayScreen extends ConsumerWidget {
                     itemCount: logs.length,
                     itemBuilder: (context, i) => TimelineTile(
                       entry: logs[i],
-                      onTap: () => showEntryDetails(context, logs[i]),
+                      onTap: () => showEntryDetails(
+                        context,
+                        logs[i],
+                        onEdit: (e) => _editEntry(context, e),
+                      ),
+                      onEdit: () => _editEntry(context, logs[i]),
                       onDelete: () => _confirmDelete(context, ref, logs[i]),
                     ),
                     separatorBuilder: (_, _) => const SizedBox(height: 10),
@@ -215,6 +221,15 @@ class TodayScreen extends ConsumerWidget {
     await ref.read(dayLogsProvider.notifier).delete(entry);
     if (!context.mounted) return;
     AppToast.show(context, 'Deleted');
+  }
+
+  /// Opens the edit/resend sheet for a saved entry. The sheet updates the row
+  /// in place (same id/timestamp); a `true` result means it was saved back.
+  Future<void> _editEntry(BuildContext context, LogEntry entry) async {
+    final updated = await showEntryEditor(context, entry: entry);
+    if (updated == true && context.mounted) {
+      AppToast.show(context, 'Entry updated');
+    }
   }
 }
 

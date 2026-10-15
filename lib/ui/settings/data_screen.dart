@@ -1,7 +1,14 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../../data/backup_service.dart';
 import '../../data/secure_settings.dart';
 import '../../data/seed_demo.dart';
 import '../../providers/providers.dart';
@@ -19,6 +26,135 @@ class DataScreen extends ConsumerStatefulWidget {
 }
 
 class _DataScreenState extends ConsumerState<DataScreen> {
+  /// Set while an export or import is running, so the buttons disable and the
+  /// user cannot start a second one over the top of a half-finished restore.
+  bool _busy = false;
+
+  /// Writes the whole database to a JSON file and opens the share sheet, so
+  /// the backup can leave the device (Drive, email, another phone). Nothing
+  /// is uploaded by the app itself — where it goes is the user's choice.
+  Future<void> _export() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final db = await ref.read(databaseProvider.future);
+      final backup = await BackupService.export(db);
+      // The file is a plaintext copy of the user's health and chat data, so
+      // keep at most one on disk. It can't be deleted straight after sharing:
+      // the receiving app (Drive, email) may still be reading it.
+      final tmp = await getTemporaryDirectory();
+      final dir = Directory('${tmp.path}/backups');
+      if (await dir.exists()) await dir.delete(recursive: true);
+      await dir.create();
+      final file = File('${dir.path}/${BackupService.filename()}');
+      await file.writeAsString(BackupService.encode(backup));
+      final count = BackupService.recordCount(backup);
+      if (!mounted) return;
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'application/json')],
+          subject: 'Weight Buddy backup',
+          text: '$count records — keep this file somewhere safe.',
+        ),
+      );
+      if (!mounted) return;
+      AppToast.show(context, 'Exported $count records');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(context, 'Export failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Restores a backup file, replacing everything currently stored. Parsing
+  /// and validation happen before the confirmation prompt, so a wrong file is
+  /// rejected without the user having agreed to a wipe first.
+  Future<void> _import() async {
+    if (_busy) return;
+    // Claimed before the picker opens: a double tap would otherwise start a
+    // second picker (or a second restore) while the first is still running.
+    setState(() => _busy = true);
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        withData: true,
+      );
+      if (picked == null || picked.files.isEmpty || !mounted) return;
+
+      final chosen = picked.files.single;
+      final bytes = chosen.bytes;
+      final path = chosen.path;
+      final String text;
+      if (bytes != null) {
+        text = utf8.decode(bytes, allowMalformed: true);
+      } else if (path != null) {
+        text = await File(path).readAsString();
+      } else {
+        AppToast.show(context, 'Could not read that file');
+        return;
+      }
+
+      final Map<String, dynamic> backup;
+      try {
+        backup = BackupService.parse(text);
+      } on BackupException catch (e) {
+        if (!mounted) return;
+        AppToast.show(context, e.message);
+        return;
+      }
+      final count = BackupService.recordCount(backup);
+      final exportedAt = backup['exported_at'];
+
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.bark,
+          title: const Text('Restore this backup?'),
+          content: Text(
+              'This will replace everything currently in the app with the '
+              '$count records in this file'
+              '${exportedAt is String ? ', exported ${exportedAt.split('T').first}' : ''}. '
+              'Your current entries can’t be recovered afterwards. '
+              'Your OpenAI key is not part of a backup and stays as it is.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.plantain,
+                foregroundColor: AppColors.pot,
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Restore'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+
+      final db = await ref.read(databaseProvider.future);
+      final skipped = await BackupService.import(db, backup);
+      await ref.read(refreshAfterDataReplacedProvider)(db: db);
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        skipped == 0
+            ? 'Restored $count records'
+            : 'Restored, but $skipped unreadable rows were skipped',
+      );
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(context, 'Import failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _deleteAll() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -54,17 +190,10 @@ class _DataScreenState extends ConsumerState<DataScreen> {
     try {
       await SecureSettings().clear();
     } catch (_) {}
-    // Every provider must re-read: the shell watches app settings and flips
-    // back to the onboarding questionnaire once the profile flag is gone.
-    ref.invalidate(appSettingsProvider);
-    ref.invalidate(settingsProvider);
-    ref.invalidate(dayLogsProvider);
-    ref.invalidate(weighInsProvider);
-    ref.invalidate(chatMessagesProvider);
-    ref.invalidate(memoriesProvider);
-    ref.invalidate(exercisesProvider);
-    // With the reminder reset to off, this cancels any scheduled nudge.
-    await ref.read(rearmDailyReminderProvider)(db: db);
+    // The shell watches app settings and flips back to the onboarding
+    // questionnaire once the profile flag is gone; the reminder, reset to
+    // off, gets cancelled.
+    await ref.read(refreshAfterDataReplacedProvider)(db: db);
     if (!mounted) return;
     AppToast.show(context, 'App reset — fresh install, welcome back');
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -108,14 +237,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
     await db.wipeAllData();
     await ref.read(appSettingsProvider.notifier).save(settingsBefore);
     await seedDemoData(db, force: true);
-    ref.invalidate(dayLogsProvider);
-    ref.invalidate(weighInsProvider);
-    ref.invalidate(chatMessagesProvider);
-    ref.invalidate(memoriesProvider);
-    ref.invalidate(exercisesProvider);
-    ref.invalidate(appSettingsProvider);
-    // The demo logs today, so the nudge has nothing to say.
-    await ref.read(rearmDailyReminderProvider)(db: db);
+    await ref.read(refreshAfterDataReplacedProvider)(db: db);
     if (!mounted) return;
     AppToast.show(context, 'Demo data loaded');
   }
@@ -138,6 +260,46 @@ class _DataScreenState extends ConsumerState<DataScreen> {
             'you want a clean slate — it resets the app to a fresh install.',
             style: AppText.bodyMuted(),
           ),
+          const SizedBox(height: 20),
+          Text('Backup', style: AppText.label()),
+          const SizedBox(height: 8),
+          Text(
+            'Export writes everything to a file you can keep or move to '
+            'another phone. Import replaces what’s in the app with a backup '
+            'file. Your OpenAI key isn’t included — re-enter it after a '
+            'restore.',
+            style: AppText.bodyMuted(),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _export,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.plantain,
+                    side: const BorderSide(color: AppColors.plantain),
+                  ),
+                  icon: const Icon(Icons.ios_share_rounded, size: 20),
+                  label: const Text('Export'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _import,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.plantain,
+                    side: const BorderSide(color: AppColors.plantain),
+                  ),
+                  icon: const Icon(Icons.download_rounded, size: 20),
+                  label: const Text('Import'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Text('Danger zone', style: AppText.label()),
           const SizedBox(height: 12),
           if (kDebugMode) ...[
             OutlinedButton.icon(
@@ -152,7 +314,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
             const SizedBox(height: 12),
           ],
           OutlinedButton.icon(
-            onPressed: _deleteAll,
+            onPressed: _busy ? null : _deleteAll,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.chili,
               side: const BorderSide(color: AppColors.chili),

@@ -6,17 +6,22 @@ import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
 import 'macro_pill.dart';
 
-/// One row in the day's timeline. Tapping the row opens the entry details.
+/// One row in the day's timeline. Tapping the row opens the entry details;
+/// the pencil opens the edit/resend sheet directly.
 class TimelineTile extends StatelessWidget {
   const TimelineTile({
     super.key,
     required this.entry,
     required this.onDelete,
+    required this.onEdit,
     required this.onTap,
   });
 
   final LogEntry entry;
   final VoidCallback onDelete;
+
+  /// Opens the edit/resend sheet for this entry.
+  final VoidCallback onEdit;
 
   /// Opens the details sheet for this entry.
   final VoidCallback onTap;
@@ -110,6 +115,12 @@ class TimelineTile extends StatelessWidget {
               ),
               const Icon(Icons.chevron_right_rounded,
                   color: AppColors.smoke, size: 20),
+              IconButton(
+                onPressed: onEdit,
+                tooltip: 'Edit entry',
+                icon: const Icon(Icons.edit_outlined,
+                    color: AppColors.smoke, size: 20),
+              ),
               IconButton(
                 onPressed: onDelete,
                 tooltip: 'Delete entry',

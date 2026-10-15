@@ -18,6 +18,10 @@ speaking — powered by your own OpenAI API key, with everything stored on-devic
   20-rep set logs a few kcal, not a fake workout number.
 - **Confirm before saving** — review the parsed items, tweak portion sizes, then
   save to the local log.
+- **Fix without re-dictating** — edit any logged entry: tweak quantities, add or
+  remove items, or correct the words and re-parse with AI (handy when the model
+  priced something wrong or you forgot an item). The entry keeps its place in
+  the day.
 - **The day as a sound wave** — each entry is a peak on the dashboard (height ∝
   calories, colour = meal or exercise), so a day reads like a voice memo.
 - **Month calendar & streaks** — every day is tinted against your maintenance

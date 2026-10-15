@@ -5,14 +5,21 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
 import 'macro_pill.dart';
+import 'meal_edit_parts.dart';
 
-/// Opens the details sheet for a logged meal or exercise.
-Future<void> showEntryDetails(BuildContext context, LogEntry entry) {
+/// Opens the details sheet for a logged meal or exercise. When [onEdit] is
+/// given, the sheet offers an “Edit” action that closes the details and hands
+/// the entry back to the caller (which opens the edit/resend sheet).
+Future<void> showEntryDetails(
+  BuildContext context,
+  LogEntry entry, {
+  void Function(LogEntry entry)? onEdit,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (_) => EntryDetailsSheet(entry: entry),
+    builder: (_) => EntryDetailsSheet(entry: entry, onEdit: onEdit),
   );
 }
 
@@ -20,17 +27,12 @@ Future<void> showEntryDetails(BuildContext context, LogEntry entry) {
 /// per-item / per-set detail for meals and exercises, plus the raw text the
 /// entry was parsed from.
 class EntryDetailsSheet extends StatelessWidget {
-  const EntryDetailsSheet({super.key, required this.entry});
+  const EntryDetailsSheet({super.key, required this.entry, this.onEdit});
 
   final LogEntry entry;
 
-  static String _mealLabel(MealType type) => switch (type) {
-        MealType.breakfast => 'Breakfast',
-        MealType.lunch => 'Lunch',
-        MealType.dinner => 'Dinner',
-        MealType.snack => 'Snack',
-        MealType.meal => 'Meal',
-      };
+  /// When set, shows an “Edit this entry” action at the bottom.
+  final void Function(LogEntry entry)? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -68,7 +70,7 @@ class EntryDetailsSheet extends StatelessWidget {
                   children: [
                     Text(
                       isMeal
-                          ? _mealLabel(entry.mealType).toUpperCase()
+                          ? mealTypeLabel(entry.mealType).toUpperCase()
                           : 'EXERCISE',
                       style: AppText.label(color: accent),
                     ),
@@ -174,6 +176,18 @@ class EntryDetailsSheet extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+          ],
+          if (onEdit != null) ...[
+            const SizedBox(height: 24),
+            FilledButton.tonalIcon(
+              key: const ValueKey('entry-details-edit'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                onEdit!(entry);
+              },
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Edit this entry'),
             ),
           ],
         ],
