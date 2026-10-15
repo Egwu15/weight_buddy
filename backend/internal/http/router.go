@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/tedif/weight-buddy-backend/internal/auth"
+	"github.com/tedif/weight-buddy-backend/internal/limits"
 )
 
 // Deps are the collaborators the HTTP layer needs. It grows as tasks add
@@ -37,6 +38,10 @@ type Deps struct {
 	// RevenueCatEntitlementID is the entitlement a purchase grants when the
 	// payload does not name one.
 	RevenueCatEntitlementID string
+
+	// Limits enforces daily quotas and the global spend cap. Required by the
+	// metered routes.
+	Limits *limits.Enforcer
 }
 
 // NewRouter builds the application router with all routes registered.
@@ -49,6 +54,11 @@ func NewRouter(deps Deps) http.Handler {
 	r.Route("/v1", func(r chi.Router) {
 		r.Post("/auth/anonymous", deps.handleAnonymous)
 		r.Post("/webhooks/revenuecat", deps.handleRevenueCatWebhook)
+
+		r.Group(func(r chi.Router) {
+			r.Use(deps.requireAuth)
+			r.Get("/me", deps.handleMe)
+		})
 	})
 
 	return r
