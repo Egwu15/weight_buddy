@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ const (
 	defaultHTTPAddr        = ":8080"
 	defaultLogLevel        = "info"
 	defaultShutdownTimeout = 10 * time.Second
+	defaultRequestTimeout  = 60 * time.Second
 )
 
 // Config is the fully resolved, validated runtime configuration.
@@ -27,6 +29,11 @@ type Config struct {
 	HTTPAddr        string
 	LogLevel        slog.Level
 	ShutdownTimeout time.Duration
+	// RequestTimeout bounds how long a single request handler may run. It is
+	// applied per request rather than as a global server WriteTimeout so that
+	// long AI calls and audio uploads are not cut off by a value chosen for
+	// the fastest endpoint.
+	RequestTimeout time.Duration
 }
 
 // IsProduction reports whether the service is running in production mode.
@@ -45,9 +52,8 @@ func Load() (Config, error) {
 
 func load(lookup envLookup) (Config, error) {
 	cfg := Config{
-		Env:             getEnv(lookup, "APP_ENV", defaultEnv),
-		HTTPAddr:        getEnv(lookup, "HTTP_ADDR", defaultHTTPAddr),
-		ShutdownTimeout: defaultShutdownTimeout,
+		Env:      getEnv(lookup, "APP_ENV", defaultEnv),
+		HTTPAddr: strings.TrimSpace(getEnv(lookup, "HTTP_ADDR", defaultHTTPAddr)),
 	}
 
 	var errs []error
@@ -58,32 +64,60 @@ func load(lookup envLookup) (Config, error) {
 		errs = append(errs, fmt.Errorf("APP_ENV must be %q or %q, got %q", "development", "production", cfg.Env))
 	}
 
-	if raw, ok := lookup("SHUTDOWN_TIMEOUT"); ok && raw != "" {
-		d, err := time.ParseDuration(raw)
-		switch {
-		case err != nil:
-			errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT is not a valid duration: %w", err))
-		case d <= 0:
-			errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT must be positive, got %q", raw))
-		default:
-			cfg.ShutdownTimeout = d
-		}
-	}
-
-	level, err := parseLogLevel(getEnv(lookup, "LOG_LEVEL", defaultLogLevel))
-	if err != nil {
+	if err := validateAddr(cfg.HTTPAddr); err != nil {
 		errs = append(errs, err)
 	}
-	cfg.LogLevel = level
 
-	if strings.TrimSpace(cfg.HTTPAddr) == "" {
-		errs = append(errs, errors.New("HTTP_ADDR must not be empty"))
+	level, levelErr := parseLogLevel(getEnv(lookup, "LOG_LEVEL", defaultLogLevel))
+	if levelErr != nil {
+		errs = append(errs, levelErr)
+	} else {
+		cfg.LogLevel = level
+	}
+
+	shutdownTimeout, err := parsePositiveDuration(lookup, "SHUTDOWN_TIMEOUT", defaultShutdownTimeout)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		cfg.ShutdownTimeout = shutdownTimeout
+	}
+
+	requestTimeout, err := parsePositiveDuration(lookup, "REQUEST_TIMEOUT", defaultRequestTimeout)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		cfg.RequestTimeout = requestTimeout
 	}
 
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)
 	}
 	return cfg, nil
+}
+
+func validateAddr(addr string) error {
+	if addr == "" {
+		return errors.New("HTTP_ADDR must not be empty")
+	}
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		return fmt.Errorf("HTTP_ADDR must be a host:port address: %w", err)
+	}
+	return nil
+}
+
+func parsePositiveDuration(lookup envLookup, key string, fallback time.Duration) (time.Duration, error) {
+	raw, ok := lookup(key)
+	if !ok || raw == "" {
+		return fallback, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return fallback, fmt.Errorf("%s is not a valid duration: %w", key, err)
+	}
+	if d <= 0 {
+		return fallback, fmt.Errorf("%s must be positive, got %q", key, raw)
+	}
+	return d, nil
 }
 
 func parseLogLevel(raw string) (slog.Level, error) {

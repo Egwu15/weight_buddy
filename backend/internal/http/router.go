@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -15,11 +16,16 @@ import (
 // stores, authenticators and providers.
 type Deps struct {
 	Logger *slog.Logger
+	// RequestTimeout bounds each request. Zero disables the deadline, which is
+	// convenient in tests; production always sets it from config.
+	RequestTimeout time.Duration
 }
 
 // NewRouter builds the application router with all routes registered.
 func NewRouter(deps Deps) http.Handler {
 	r := chi.NewRouter()
+	r.Use(accessLog(deps.Logger))
+	r.Use(withRequestTimeout(deps.RequestTimeout))
 	r.Get("/healthz", handleHealthz)
 	return r
 }
@@ -31,7 +37,10 @@ func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 // writeJSON writes a JSON response. Handlers use it so every response has a
 // consistent shape; error payloads are built on top of it in a later task.
 func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
+	// The status line is already flushed, so an encode failure can only be
+	// logged, not turned into an error response. Payloads here are small,
+	// fixed-shape structs, so this is effectively unreachable.
 	_ = json.NewEncoder(w).Encode(payload)
 }

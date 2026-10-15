@@ -3,7 +3,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,6 +15,11 @@ import (
 )
 
 func main() {
+	// Install a structured logger before anything else so that a config or
+	// startup failure is always reported as JSON, even though the real log
+	// level and format are only known once config has loaded.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+
 	if err := run(); err != nil {
 		slog.Error("service exited with error", "err", err)
 		os.Exit(1)
@@ -31,11 +38,19 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	router := httpapi.NewRouter(httpapi.Deps{Logger: logger})
-	srv := httpapi.NewServer(cfg.HTTPAddr, router, logger)
+	ln, err := net.Listen("tcp", cfg.HTTPAddr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cfg.HTTPAddr, err)
+	}
 
-	logger.Info("starting api", "env", cfg.Env, "addr", cfg.HTTPAddr)
-	return httpapi.Run(ctx, srv, logger, cfg.ShutdownTimeout)
+	router := httpapi.NewRouter(httpapi.Deps{
+		Logger:         logger,
+		RequestTimeout: cfg.RequestTimeout,
+	})
+	srv := httpapi.NewServer(router, logger)
+
+	logger.Info("starting api", "env", cfg.Env, "addr", ln.Addr().String())
+	return httpapi.Run(ctx, srv, ln, logger, cfg.ShutdownTimeout)
 }
 
 func newLogger(cfg config.Config) *slog.Logger {

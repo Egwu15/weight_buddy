@@ -29,6 +29,7 @@ func TestLoad(t *testing.T) {
 				HTTPAddr:        ":8080",
 				LogLevel:        slog.LevelInfo,
 				ShutdownTimeout: 10 * time.Second,
+				RequestTimeout:  60 * time.Second,
 			},
 		},
 		{
@@ -38,12 +39,25 @@ func TestLoad(t *testing.T) {
 				"HTTP_ADDR":        "127.0.0.1:9000",
 				"LOG_LEVEL":        "debug",
 				"SHUTDOWN_TIMEOUT": "30s",
+				"REQUEST_TIMEOUT":  "15s",
 			},
 			want: Config{
 				Env:             "production",
 				HTTPAddr:        "127.0.0.1:9000",
 				LogLevel:        slog.LevelDebug,
 				ShutdownTimeout: 30 * time.Second,
+				RequestTimeout:  15 * time.Second,
+			},
+		},
+		{
+			name: "http addr is trimmed",
+			env:  map[string]string{"HTTP_ADDR": "  127.0.0.1:9000  "},
+			want: Config{
+				Env:             "development",
+				HTTPAddr:        "127.0.0.1:9000",
+				LogLevel:        slog.LevelInfo,
+				ShutdownTimeout: 10 * time.Second,
+				RequestTimeout:  60 * time.Second,
 			},
 		},
 		{
@@ -57,6 +71,11 @@ func TestLoad(t *testing.T) {
 			wantErr: "LOG_LEVEL",
 		},
 		{
+			name:    "addr without port",
+			env:     map[string]string{"HTTP_ADDR": "8080"},
+			wantErr: "HTTP_ADDR must be a host:port address",
+		},
+		{
 			name:    "non-positive shutdown timeout",
 			env:     map[string]string{"SHUTDOWN_TIMEOUT": "0s"},
 			wantErr: "SHUTDOWN_TIMEOUT must be positive",
@@ -65,6 +84,11 @@ func TestLoad(t *testing.T) {
 			name:    "unparsable shutdown timeout",
 			env:     map[string]string{"SHUTDOWN_TIMEOUT": "soon"},
 			wantErr: "not a valid duration",
+		},
+		{
+			name:    "non-positive request timeout",
+			env:     map[string]string{"REQUEST_TIMEOUT": "-5s"},
+			wantErr: "REQUEST_TIMEOUT must be positive",
 		},
 		{
 			name:    "empty http addr",
@@ -92,6 +116,9 @@ func TestLoad(t *testing.T) {
 				if !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("expected error containing %q, got %q", tt.wantErr, err.Error())
 				}
+				if tt.name == "multiple errors are joined" && !strings.Contains(err.Error(), "LOG_LEVEL") {
+					t.Fatalf("expected joined error to also mention LOG_LEVEL, got %q", err.Error())
+				}
 				return
 			}
 
@@ -106,10 +133,10 @@ func TestLoad(t *testing.T) {
 }
 
 func TestIsProduction(t *testing.T) {
-	if (Config{Env: "production"}).IsProduction() != true {
+	if !(Config{Env: "production"}).IsProduction() {
 		t.Fatal("expected production env to report IsProduction")
 	}
-	if (Config{Env: "development"}).IsProduction() != false {
+	if (Config{Env: "development"}).IsProduction() {
 		t.Fatal("expected development env to report !IsProduction")
 	}
 }
