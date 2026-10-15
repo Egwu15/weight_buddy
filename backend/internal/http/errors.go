@@ -27,3 +27,11 @@ type errorBody struct {
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, apiError{Error: errorBody{Code: code, Message: message}})
 }
+
+// writeJSONRaw writes an already-encoded JSON payload (for example a structured
+// AI response passed straight through) with the standard content type.
+func writeJSONRaw(w http.ResponseWriter, status int, payload []byte) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(payload)
+}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/tedif/weight-buddy-backend/internal/ai"
 	"github.com/tedif/weight-buddy-backend/internal/auth"
 	"github.com/tedif/weight-buddy-backend/internal/limits"
 )
@@ -42,6 +43,10 @@ type Deps struct {
 	// Limits enforces daily quotas and the global spend cap. Required by the
 	// metered routes.
 	Limits *limits.Enforcer
+
+	// Provider is the AI vendor seam. Nil disables the metered AI routes with
+	// a 503.
+	Provider ai.Provider
 }
 
 // NewRouter builds the application router with all routes registered.
@@ -58,6 +63,13 @@ func NewRouter(deps Deps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(deps.requireAuth)
 			r.Get("/me", deps.handleMe)
+
+			r.Post("/ai/transcribe", deps.handleTranscribe)
+			r.Post("/ai/parse-meal", deps.handleParseMeal)
+			r.Post("/ai/parse-exercise", deps.handleParseExercise)
+			r.Post("/ai/chat", deps.handleChat)
+			r.Post("/ai/distill-memories", deps.handleDistillMemories)
+			r.Post("/ai/extract-exercises", deps.handleExtractExercises)
 		})
 	})
 
