@@ -14,3 +14,7 @@
 # Go backend build output
 /backend/bin/
 /backend/dist/
+
+# Embedded web site (built by `make web`)
+/backend/web/node_modules/
+/backend/web/dist/

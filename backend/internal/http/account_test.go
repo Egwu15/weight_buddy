@@ -3,17 +3,10 @@ package httpapi
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/tedif/weight-buddy-backend/internal/store"
 )
-
-func deleteDeps(fs *fakeStore) Deps {
-	deps := testAuthDeps(fs)
-	deps.SupportEmail = "help@weightbuddy.test"
-	return deps
-}
 
 func deleteMe(t *testing.T, router http.Handler, token string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -28,7 +21,7 @@ func deleteMe(t *testing.T, router http.Handler, token string) *httptest.Respons
 
 func TestDeleteMeRemovesEverything(t *testing.T) {
 	fs := newFakeStore()
-	deps := deleteDeps(fs)
+	deps := testAuthDeps(fs)
 	router := NewRouter(deps)
 
 	user, token := seedAnonymous(t, fs, deps, "device-delete-1")
@@ -58,7 +51,7 @@ func TestDeleteMeRemovesEverything(t *testing.T) {
 
 func TestDeleteMeIsIdempotent(t *testing.T) {
 	fs := newFakeStore()
-	deps := deleteDeps(fs)
+	deps := testAuthDeps(fs)
 	router := NewRouter(deps)
 
 	_, token := seedAnonymous(t, fs, deps, "device-delete-2")
@@ -76,7 +69,7 @@ func TestDeleteMeIsIdempotent(t *testing.T) {
 
 func TestDeleteMeRequiresAuth(t *testing.T) {
 	fs := newFakeStore()
-	router := NewRouter(deleteDeps(fs))
+	router := NewRouter(testAuthDeps(fs))
 
 	tests := []struct {
 		name  string
@@ -95,29 +88,5 @@ func TestDeleteMeRequiresAuth(t *testing.T) {
 				t.Fatalf("code = %q, want unauthorized", code)
 			}
 		})
-	}
-}
-
-func TestDeleteAccountPageShowsSupportEmail(t *testing.T) {
-	fs := newFakeStore()
-	deps := deleteDeps(fs)
-	router := NewRouter(deps)
-
-	req := httptest.NewRequest(http.MethodGet, "/delete-account", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
-		t.Fatalf("content-type = %q, want text/html", ct)
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "help@weightbuddy.test") {
-		t.Fatal("page does not show the support email")
-	}
-	if !strings.Contains(body, "Delete account") {
-		t.Fatal("page does not explain the in-app delete step")
 	}
 }

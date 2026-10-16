@@ -15,6 +15,7 @@ import (
 	"github.com/tedif/weight-buddy-backend/internal/config"
 	httpapi "github.com/tedif/weight-buddy-backend/internal/http"
 	"github.com/tedif/weight-buddy-backend/internal/limits"
+	"github.com/tedif/weight-buddy-backend/internal/site"
 	"github.com/tedif/weight-buddy-backend/internal/store"
 )
 
@@ -82,7 +83,7 @@ func run() error {
 		FreeAccountsPerDevice:     cfg.FreeAccountsPerDevice,
 		RevenueCatWebhookSecret:   cfg.RevenueCatWebhookSecret,
 		RevenueCatEntitlementID:   cfg.RevenueCatEntitlementID,
-		SupportEmail:              cfg.SupportEmail,
+		Site:                      site.Handler(),
 		Limits:                    enforcer,
 		Provider:                  provider,
 		RateLimitPerIPPerMinute:   cfg.RateLimitPerIPPerMinute,

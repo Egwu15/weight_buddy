@@ -44,9 +44,11 @@ type Deps struct {
 	// payload does not name one.
 	RevenueCatEntitlementID string
 
-	// SupportEmail is shown on the public account-deletion page as the address
-	// to request deletion from.
-	SupportEmail string
+	// Site serves the public pages (home, privacy, terms, account deletion)
+	// from the embedded build. It is the fallback for any path no API route
+	// claimed, so API routes always win. Nil answers those paths with a JSON
+	// 404, which keeps API-only tests simple.
+	Site http.Handler
 
 	// Limits enforces daily quotas and the global spend cap. Required by the
 	// metered routes.
@@ -79,11 +81,10 @@ func NewRouter(deps Deps) http.Handler {
 	}
 
 	r.Get("/healthz", handleHealthz)
-	// Public account-deletion page (Google Play requires a web link alongside
-	// in-app deletion).
-	r.Get("/delete-account", deps.handleDeleteAccount)
 
 	r.Route("/v1", func(r chi.Router) {
+		// An unknown /v1 path is an API error, not the public site's HTML 404.
+		r.NotFound(notFoundJSON)
 		r.Post("/auth/anonymous", deps.handleAnonymous)
 		r.Post("/auth/google", deps.handleGoogle)
 		r.Post("/webhooks/revenuecat", deps.handleRevenueCatWebhook)
@@ -115,11 +116,28 @@ func NewRouter(deps Deps) http.Handler {
 		})
 	})
 
+	// Everything that is not an API route falls through to the public site.
+	// Serving it from NotFound (rather than a catch-all route) is what keeps
+	// the API authoritative: chi only reaches here after no route matched.
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		if deps.Site == nil {
+			notFoundJSON(w, r)
+			return
+		}
+		deps.Site.ServeHTTP(w, r)
+	})
+
 	return r
 }
 
 func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// notFoundJSON is the API's 404: unknown /v1 paths and, when no site is wired,
+// every other unknown path.
+func notFoundJSON(w http.ResponseWriter, _ *http.Request) {
+	writeError(w, http.StatusNotFound, "not_found", "Not found.")
 }
 
 // writeJSON writes a JSON response. Handlers use it so every response has a

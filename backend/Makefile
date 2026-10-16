@@ -2,16 +2,24 @@
 BINARY := weight-buddy
 MIGRATE := weight-buddy-migrate
 
-.PHONY: build test vet fmt run migrate migrate-status tidy
+.PHONY: build web test vet fmt run migrate migrate-status tidy
 
-build:
+# Build the embedded public site. Its output (web/dist) is required by the Go
+# build: //go:embed fails clearly if it is missing. Dependencies are installed
+# only when node_modules is absent, so this stays cheap on repeated runs.
+web:
+	cd web && { [ -d node_modules ] || npm ci; } && npm run build
+
+# build/test/vet/run all compile the module-root webassets package, which
+# embeds web/dist, so they depend on `web`.
+build: web
 	go build -o bin/$(BINARY) ./cmd/api
 	go build -o bin/$(MIGRATE) ./cmd/migrate
 
-test:
+test: web
 	go test ./...
 
-vet:
+vet: web
 	go vet ./...
 
 fmt:
@@ -22,7 +30,7 @@ tidy:
 
 # Run the API locally. Reads configuration from the environment (see
 # .env.example); DATABASE_URL and JWT_SECRET are required.
-run:
+run: web
 	go run ./cmd/api
 
 # Apply migrations. Requires DATABASE_URL in the environment.

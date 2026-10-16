@@ -22,7 +22,6 @@ func withRequired(env map[string]string) map[string]string {
 		"DATABASE_URL":         "postgres://user@localhost:5432/db",
 		"JWT_SECRET":           "test-secret",
 		"GOOGLE_WEB_CLIENT_ID": "test-client.apps.googleusercontent.com",
-		"SUPPORT_EMAIL":        "support@weightbuddy.test",
 	}
 	for k, v := range env {
 		out[k] = v
@@ -59,7 +58,6 @@ func TestLoad(t *testing.T) {
 				AITimeout:                 90 * time.Second,
 				RevenueCatEntitlementID:   "pro",
 				GoogleWebClientID:         "test-client.apps.googleusercontent.com",
-				SupportEmail:              "support@weightbuddy.test",
 				TrustedProxies:            defaultTrustedProxies(),
 			},
 		},
@@ -106,7 +104,6 @@ func TestLoad(t *testing.T) {
 				RevenueCatWebhookSecret:   "whsec",
 				RevenueCatEntitlementID:   "premium",
 				GoogleWebClientID:         "test-client.apps.googleusercontent.com",
-				SupportEmail:              "support@weightbuddy.test",
 				TrustedProxies: []netip.Prefix{
 					netip.MustParsePrefix("10.0.0.0/8"),
 					netip.MustParsePrefix("192.168.1.5/32"),
@@ -135,7 +132,6 @@ func TestLoad(t *testing.T) {
 				AITimeout:                 90 * time.Second,
 				RevenueCatEntitlementID:   "pro",
 				GoogleWebClientID:         "test-client.apps.googleusercontent.com",
-				SupportEmail:              "support@weightbuddy.test",
 				TrustedProxies:            defaultTrustedProxies(),
 			},
 		},
@@ -158,11 +154,6 @@ func TestLoad(t *testing.T) {
 			name:    "missing google web client id",
 			env:     withRequired(map[string]string{"GOOGLE_WEB_CLIENT_ID": ""}),
 			wantErr: "GOOGLE_WEB_CLIENT_ID is required",
-		},
-		{
-			name:    "missing support email",
-			env:     withRequired(map[string]string{"SUPPORT_EMAIL": ""}),
-			wantErr: "SUPPORT_EMAIL is required",
 		},
 		{
 			name:    "invalid log level",
