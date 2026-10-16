@@ -18,3 +18,19 @@ const String kBackendBaseUrl = String.fromEnvironment(
 const String kGoogleWebClientId = String.fromEnvironment(
   'GOOGLE_WEB_CLIENT_ID',
 );
+
+/// Base URL of the public website (privacy policy, terms of service and the
+/// account-deletion page). The same Go binary serves the API and the site, so
+/// this defaults to the backend host. Override when the site lives on its own
+/// domain:
+///
+///   flutter run --dart-define=SITE_BASE_URL=https://weightbuddy.app
+const String kSiteBaseUrl = String.fromEnvironment(
+  'SITE_BASE_URL',
+  defaultValue: kBackendBaseUrl,
+);
+
+/// Public legal pages, linked from Settings and required by the Play listing.
+const String kPrivacyUrl = '$kSiteBaseUrl/privacy';
+const String kTermsUrl = '$kSiteBaseUrl/terms';
+const String kDeleteAccountUrl = '$kSiteBaseUrl/delete-account';

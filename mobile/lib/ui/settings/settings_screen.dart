@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../config.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/external_links.dart';
+import '../widgets/app_toast.dart';
 import 'account_screen.dart';
 import 'data_screen.dart';
 import 'reminder_screen.dart';
@@ -55,6 +58,28 @@ class SettingsScreen extends StatelessWidget {
             subtitle: 'Everything lives on this device — delete or demo',
             onTap: () => _open(context, const DataScreen()),
           ),
+          const SizedBox(height: 24),
+          const _SectionLabel('LEGAL & PRIVACY'),
+          _SettingsTile(
+            icon: Icons.privacy_tip_outlined,
+            title: 'Privacy policy',
+            subtitle: 'What we collect and where it goes',
+            onTap: () => _openLink(context, kPrivacyUrl),
+          ),
+          const SizedBox(height: 8),
+          _SettingsTile(
+            icon: Icons.description_outlined,
+            title: 'Terms of service',
+            subtitle: 'The terms for using Weight Buddy',
+            onTap: () => _openLink(context, kTermsUrl),
+          ),
+          const SizedBox(height: 8),
+          _SettingsTile(
+            icon: Icons.no_accounts_outlined,
+            title: 'Delete account',
+            subtitle: 'Open the web page for deletion details',
+            onTap: () => _openLink(context, kDeleteAccountUrl),
+          ),
           const _VersionFooter(),
         ],
       ),
@@ -63,6 +88,13 @@ class SettingsScreen extends StatelessWidget {
 
   void _open(BuildContext context, Widget page) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  Future<void> _openLink(BuildContext context, String url) async {
+    final opened = await openExternalLink(url);
+    if (!opened && context.mounted) {
+      AppToast.show(context, 'Could not open the link. Check your connection.');
+    }
   }
 }
 
