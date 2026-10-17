@@ -418,8 +418,11 @@ trusted-proxy networks (Caddy on loopback by default). See `backend/.env.example
 - All app-specific text (name, developer, support email, Play URL, site URL, the
   legal copy) lives in one file, `backend/web/src/config.ts`, so the template can
   be reused for another app by editing that file.
-- The legal text is a **draft with `{{PLACEHOLDER}}` markers** to fill before
-  publishing (see §10).
+- All `{{PLACEHOLDER}}` markers are filled (app name, developer, support email,
+  Play URL, site URL, deletion turnaround, governing law — the Federal Republic
+  of Nigeria). The site build fails on any marker left when run with
+  `SITE_STRICT_PLACEHOLDERS=1`. The legal text is still a **draft that needs a
+  qualified review** before publishing (see §10).
 
 ### 5.12 Ops & deployment
 
@@ -429,6 +432,10 @@ trusted-proxy networks (Caddy on loopback by default). See `backend/.env.example
 - Deployed as a systemd service behind Caddy on a Contabo VPS, with Postgres on
   the same host. Migrations run via `ExecStartPre` before the API starts. `make
   web` builds the embedded site; `make build`/`test`/`vet`/`run` depend on it.
+- A container path exists too: `backend/Dockerfile` (multi-stage, distroless
+  runtime holding only the two static binaries) and `backend/docker-compose.yml`
+  (Postgres + one-shot migrate + API), wrapped by `make docker`/`docker-up`/
+  `docker-down`/`docker-reset`. systemd behind Caddy remains the primary VPS path.
 
 ## 6. App Technical Specifications
 

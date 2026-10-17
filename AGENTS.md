@@ -81,3 +81,14 @@ Copy the repo to a new one for Litpace. Keep auth, entitlements, limits and ops 
 ## Repo layout note
 
 This is a monorepo: the Flutter app lives in `mobile/` and the Go backend in `backend/`. Each backend is still destined to be split into its own repo later, so keep `backend/` self-contained.
+
+## Documentation upkeep
+
+At the end of every session, before you finish:
+
+- **Replace `HANDOFF.md`** (repository root) with the current state. Keep it to about **120 lines**;
+  go over only when it clearly earns it. It is disposable — durable facts belong in `main.md`
+  (what the system is) and `journal.md` (why). If the handoff and `main.md` disagree, `main.md` wins.
+- **Append to `journal.md`** every significant decision, **newest first**, next `D-NNN`, each with a
+  **Reverses if** line. Do not silently contradict an existing entry — supersede it and say so.
+- **Put planned work in `roadmap.md`**, not here or in the handoff, so neither grows because of it.
