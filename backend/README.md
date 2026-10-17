@@ -100,6 +100,21 @@ One static binary behind Caddy on the same host as Postgres.
 
 `/healthz` is the readiness probe for a load balancer or Basecove.
 
+## Docker
+
+There is also a container image and a compose stack, for running the whole
+backend (Postgres, migrations, API) with one command:
+
+    cp .env.example .env     # fill in the required values
+    docker compose up --build
+
+The `Dockerfile` is multi-stage: it builds the site and both static binaries
+(in which the site and migrations are embedded) and ships a distroless runtime
+holding only those binaries, so the host needs no Go, Node or shell. The stack
+mirrors the systemd flow — a one-shot `migrate` service runs before `api`
+starts. `make docker`, `make docker-up` and `make docker-down` wrap these.
+For the Contabo VPS the systemd unit above is still the primary path.
+
 ## Configuration
 
 Every variable is documented in `.env.example`. `DATABASE_URL`, `JWT_SECRET`

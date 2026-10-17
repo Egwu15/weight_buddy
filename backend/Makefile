@@ -2,13 +2,15 @@
 BINARY := weight-buddy
 MIGRATE := weight-buddy-migrate
 
-.PHONY: build web test vet fmt run migrate migrate-status tidy
+.PHONY: build web test vet fmt run migrate migrate-status tidy docker docker-up docker-down docker-reset
 
 # Build the embedded public site. Its output (web/dist) is required by the Go
 # build: //go:embed fails clearly if it is missing. Dependencies are installed
 # only when node_modules is absent, so this stays cheap on repeated runs.
+# SITE_STRICT_PLACEHOLDERS=1 makes the build fail if any {{PLACEHOLDER}} is left
+# in web/src/config.ts, so nothing ships unnoticed.
 web:
-	cd web && { [ -d node_modules ] || npm ci; } && npm run build
+	cd web && { [ -d node_modules ] || npm ci; } && SITE_STRICT_PLACEHOLDERS=1 npm run build
 
 # build/test/vet/run all compile the module-root webassets package, which
 # embeds web/dist, so they depend on `web`.
@@ -39,3 +41,20 @@ migrate:
 
 migrate-status:
 	go run ./cmd/migrate status
+
+# Build the container image. Multi-stage: the site and both static binaries are
+# built inside the image; the runtime is distroless. See Dockerfile .
+docker:
+	docker build -t $(BINARY):latest .
+
+# Run the whole backend (Postgres + migrate + api) with one command.
+docker-up:
+	docker compose up --build
+
+# Stop the stack, keeping the database volume.
+docker-down:
+	docker compose down
+
+# Stop the stack AND delete the database volume (Postgres data is lost).
+docker-reset:
+	docker compose down -v

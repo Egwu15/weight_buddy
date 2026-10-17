@@ -1,0 +1,23 @@
+# Keep the build context small and out of stale artifacts. The site is built
+# inside the image (stage 1), so web/dist and web/node_modules must not be
+# copied from the host.
+
+.git
+.gitignore
+bin/
+dist/
+
+web/node_modules/
+web/dist/
+
+# Local env/secret files must never enter an image layer.
+.env
+.env.*
+
+*.log
+.DS_Store
+README.md
+HANDOFF.md
+journal.md
+roadmap.md
+main.md
