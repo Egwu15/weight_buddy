@@ -31,10 +31,10 @@ export type SiteConfig = {
 
 export const config: SiteConfig = {
   appName: "Weight Buddy",
-  developerName: "{{DEVELOPER_NAME}}",
-  supportEmail: "{{SUPPORT_EMAIL}}",
-  playStoreUrl: "{{PLAY_STORE_URL}}",
-  siteUrl: "{{SITE_URL}}",
+  developerName: "Tedif",
+  supportEmail: "contact@tedif.com",
+  playStoreUrl: "https://play.google.com/store/apps/details?id=com.tedif.weight_buddy",
+  siteUrl: "https://weightbuddy.com",
   lastUpdated: "2026-10-15",
   tagline: "Log what you eat and how you move — just by talking.",
   features: [
@@ -44,6 +44,6 @@ export const config: SiteConfig = {
     "Everything you log stays on your phone.",
   ],
   aiProviderName: "OpenAI",
-  governingLaw: "{{GOVERNING_LAW}}",
-  deletionDays: "{{DELETION_DAYS}}",
+  governingLaw: "the Federal Republic of Nigeria",
+  deletionDays: "30",
 };
