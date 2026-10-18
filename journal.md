@@ -17,6 +17,46 @@ backend-proxied AI key — predate it and are recorded only in `main.md` and the
 
 ---
 
+## D-025 — Compose uses the database from `DATABASE_URL`, not a Postgres container
+
+**2026-10-18 · Active**
+
+The compose stack started its own `postgres:17-alpine` with hardcoded
+`weight_buddy/weight_buddy` credentials and a `pgdata` volume, while `api` and
+`migrate` ignored the `DATABASE_URL` in `.env`. That meant two sources of
+database truth, two sets of credentials to keep straight, and data that lived
+in a Docker volume instead of the database the rest of the project uses. The
+stack now runs only the one-shot migration and the API, both reading
+`DATABASE_URL`; the `db` service, healthcheck and volume are gone.
+
+Inside a container `localhost` is the container, so the compose file maps
+`host.docker.internal` to the host gateway and the docs tell Docker users to
+use it when Postgres runs on the host. `make run` on the host keeps using
+`localhost`. The trade-off is that `docker compose up` is no longer
+self-contained: a reachable database and a filled-in `DATABASE_URL` are
+prerequisites.
+
+**Reverses if:** contributors (or CI) need a one-command stack with no local
+Postgres, or the external database cannot be reached from containers; then add
+an opt-in compose profile that starts Postgres and a volume.
+
+---
+
+## D-024 — The Dockerfile uses the builder's built-in frontend, no `# syntax=` line
+
+**2026-10-18 · Active**
+
+`# syntax=docker/dockerfile:1` made every build pull the `docker/dockerfile` frontend image from Docker
+Hub before running any step. On a builder without a working client session, that pull failed with
+"failed to resolve source metadata … no active sessions", so the image never built. The Dockerfile needs
+only multi-stage builds, `COPY --from` and `COPY --chown`, which the built-in frontend supports, so the
+directive bought nothing and added a network dependency.
+
+**Reverses if:** the Dockerfile needs a feature that only a newer external frontend has (e.g.
+`RUN --mount=type=cache`, heredocs); then pin it by digest and make sure the deploy builder can pull it.
+
+---
+
 ## D-023 — Force update is a server minimum, not a hardcoded client check
 
 **2026-10-18 · Active**

@@ -446,8 +446,9 @@ or malformed, keeping offline logging usable during an outage.
   web` builds the embedded site; `make build`/`test`/`vet`/`run` depend on it.
 - A container path exists too: `backend/Dockerfile` (multi-stage, distroless
   runtime holding only the two static binaries) and `backend/docker-compose.yml`
-  (Postgres + one-shot migrate + API), wrapped by `make docker`/`docker-up`/
-  `docker-down`/`docker-reset`. systemd behind Caddy remains the primary VPS path.
+  (one-shot migrate + API against the Postgres at `DATABASE_URL`; no database
+  container or volume), wrapped by `make docker`/`docker-up`/`docker-down`/
+  `docker-reset`. systemd behind Caddy remains the primary VPS path.
 
 ## 6. App Technical Specifications
 

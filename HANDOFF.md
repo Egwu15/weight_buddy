@@ -31,8 +31,9 @@ usage metadata (counts/costs) — never meal, workout, weigh-in or chat content.
 | Website | pre-rendered by `make web`, embedded via `//go:embed all:web/dist` |
 
 Uncommitted: site copy, coach disclaimer, legal versioning, app copy pass, the Play pack in
-`mobile/store/` (icon, screenshots, feature graphic, Play-ordered `listing.md`) and the force-update
-gate (app 1.0.5+5, `GET /v1/app/version`). Nothing above is committed yet.
+`mobile/store/` (icon, screenshots, feature graphic, Play-ordered `listing.md`), the force-update
+gate (app 1.0.5+5, `GET /v1/app/version`), and the compose stack now using `DATABASE_URL` instead
+of its own Postgres container/volume (D-025). Nothing above is committed yet.
 
 ```sh
 cd backend && make test      # strict site build, then go test ./...
@@ -41,7 +42,7 @@ cd mobile  && flutter test
 cd mobile  && flutter analyze
 
 cd backend && cp .env.example .env    # sets the required JWT_SECRET
-cd backend && make docker-up           # whole backend in containers, API on :8080
+cd backend && make docker-up           # migrate + API in containers, DB from DATABASE_URL
 
 # store integration tests (skipped without this):
 createdb weight_buddy_test
@@ -104,8 +105,11 @@ TEST_DATABASE_URL="postgres://user@localhost:5432/weight_buddy_test?sslmode=disa
 - `/admin` exists only when `ADMIN_TOKEN` (16+ chars) is set. Sign in at `/admin/login` (user `admin`,
   password the token); a 12h signed cookie keeps you in, and Basic auth still works for scripts. It is
   read-only aggregates and never shows identifiers, tokens or user text.
-- Docker: compose **requires `JWT_SECRET`** and does not publish the DB port (the host Postgres
-  already uses 5432). Base images are pinned by digest.
+- Docker: compose **requires `DATABASE_URL` and `JWT_SECRET`** and uses the
+  Postgres at that URL (no database container or volume). From a container,
+  use `host.docker.internal` instead of `localhost` when the DB is on the host.
+  Base images are pinned by digest. No `# syntax=` directive on purpose (D-024):
+  pulling the external frontend broke builds with "no active sessions".
 - Google sign-in needs the **Web** client id on the server (audience) and at build time
   (`--dart-define=GOOGLE_WEB_CLIENT_ID=…`). The Android client (package + SHA) has no secret. Setup
   mistakes surface as `canceled`; debug builds log the real code in `google_signin.dart`.

@@ -1,39 +1,26 @@
-# Local/dev stack: Postgres, a one-shot migration, then the API. This mirrors
-# the systemd flow (migrate runs before the API serves traffic). For production
-# on the VPS, prefer the systemd unit in deploy/; this compose file is for
-# running the whole backend, including a database, with one command.
+# Local/dev stack: a one-shot migration, then the API, against the Postgres at
+# DATABASE_URL. This mirrors the systemd flow (migrate runs before the API
+# serves traffic) without starting a database container. For production on the
+# VPS, prefer the systemd unit in deploy/.
 #
 #   cd backend
 #   cp .env.example .env        # fill in the required values
 #   docker compose up --build
 #
-# Values below compose from an optional backend/.env (for interpolation). Dev
-# defaults keep the stack self-contained, except JWT_SECRET, which must be set
-# explicitly (a known default would let anyone forge session tokens). Anonymous
-# sign-in works once it is; Google sign-in needs a real GOOGLE_WEB_CLIENT_ID.
+# Values below compose from backend/.env (for interpolation). DATABASE_URL and
+# JWT_SECRET must be set explicitly (a known JWT default would let anyone forge
+# session tokens). Anonymous sign-in works once they are; Google sign-in needs
+# a real GOOGLE_WEB_CLIENT_ID.
+#
+# Inside a container, "localhost" is the container itself, not the host. When
+# Postgres runs on the Docker host, point DATABASE_URL at host.docker.internal
+# (mapped below) instead of localhost.
 #
 # API: http://localhost:8080   Health: http://localhost:8080/healthz
 
-services:
-  db:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: weight_buddy
-      POSTGRES_PASSWORD: weight_buddy
-      POSTGRES_DB: weight_buddy
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U weight_buddy -d weight_buddy"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    # Not published to the host: the api and migrate services reach Postgres
-    # over the compose network. Publish it only if you want host access, and on
-    # a non-default port, since the VPS already runs Postgres on 5432.
-    # ports:
-    #   - "127.0.0.1:55432:5432"
+x-db-url: &db-url ${DATABASE_URL:?set DATABASE_URL in backend/.env or the environment}
 
+services:
   # Applies the embedded migrations, then exits. The API waits for it to
   # succeed, so a fresh database is always migrated before the api starts.
   migrate:
@@ -41,10 +28,9 @@ services:
     image: weight-buddy
     entrypoint: ["/app/weight-buddy-migrate", "up"]
     environment:
-      DATABASE_URL: postgres://weight_buddy:weight_buddy@db:5432/weight_buddy?sslmode=disable
-    depends_on:
-      db:
-        condition: service_healthy
+      DATABASE_URL: *db-url
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: "no"
 
   api:
@@ -54,7 +40,7 @@ services:
       APP_ENV: ${APP_ENV:-development}
       HTTP_ADDR: ":8080"
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: postgres://weight_buddy:weight_buddy@db:5432/weight_buddy?sslmode=disable
+      DATABASE_URL: *db-url
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in backend/.env or the environment}
       GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID:-dev.apps.googleusercontent.com}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -66,12 +52,11 @@ services:
       MIN_APP_VERSION: ${MIN_APP_VERSION:-1.0.0}
       APP_STORE_URL: ${APP_STORE_URL:-https://play.google.com/store/apps/details?id=com.tedif.weight_buddy}
       APP_UPDATE_MESSAGE: ${APP_UPDATE_MESSAGE:-Update Weight Buddy to keep logging your meals and workouts.}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
     depends_on:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
-
-volumes:
-  pgdata:

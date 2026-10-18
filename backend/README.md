@@ -120,11 +120,16 @@ One static binary behind Caddy on the same host as Postgres.
 
 ## Docker
 
-There is also a container image and a compose stack, for running the whole
-backend (Postgres, migrations, API) with one command:
+There is also a container image and a compose stack, for running the
+migrations and the API with one command. It connects to the Postgres at
+`DATABASE_URL`; it does not start a database or create a volume:
 
     cp .env.example .env     # fill in the required values
     docker compose up --build
+
+Inside a container, `localhost` is the container itself. If Postgres runs on
+the Docker host, set the host in `DATABASE_URL` to `host.docker.internal`
+(the compose file maps it on Linux too). `localhost` works for `make run`.
 
 The `Dockerfile` is multi-stage: it builds the site and both static binaries
 (in which the site and migrations are embedded) and ships a distroless runtime

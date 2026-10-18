@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # Multi-stage build for the Weight Buddy backend. The runtime image holds only
 # the two static binaries: the Go build embeds the pre-rendered site and the
 # SQL migrations, so nothing else ships.

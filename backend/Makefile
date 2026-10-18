@@ -54,14 +54,14 @@ migrate-status:
 docker:
 	docker build -t $(BINARY):latest .
 
-# Run the whole backend (Postgres + migrate + api) with one command.
+# Run migrations and the API in containers against DATABASE_URL.
 docker-up:
 	docker compose up --build
 
-# Stop the stack, keeping the database volume.
+# Stop the stack. The database is external, so no data is deleted.
 docker-down:
 	docker compose down
 
-# Stop the stack AND delete the database volume (Postgres data is lost).
+# Stop the stack and remove its containers. The database is external.
 docker-reset:
-	docker compose down -v
+	docker compose down
