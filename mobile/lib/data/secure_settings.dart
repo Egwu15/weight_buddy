@@ -15,6 +15,8 @@ class SecureSettings {
   static const _keyToken = 'backend_token';
   static const _keyGoogleLinked = 'backend_google_linked';
   static const _keyVocabulary = 'custom_vocabulary';
+  static const _keyLegalVersion = 'legal_accepted_version';
+  static const _keyLegalAcceptedAt = 'legal_accepted_at';
 
   Future<String?> readInstallId() => _storage.read(key: _keyInstallId);
   Future<void> writeInstallId(String value) =>
@@ -41,6 +43,17 @@ class SecureSettings {
   Future<void> writeVocabulary(String value) =>
       _storage.write(key: _keyVocabulary, value: value);
 
+  /// Records that the user accepted legal [version] at [at]. The stored value
+  /// survives [clearSession] so signing out does not erase it; [clear] removes
+  /// it, matching a fresh install.
+  Future<void> writeLegalAcceptance(String version, DateTime at) async {
+    await _storage.write(key: _keyLegalVersion, value: version);
+    await _storage.write(
+      key: _keyLegalAcceptedAt,
+      value: at.millisecondsSinceEpoch.toString(),
+    );
+  }
+
   /// Removes the session credentials (install id, user id, token and the
   /// Google-linked flag) but keeps the vocabulary. Used to return to a fresh,
   /// unlinked anonymous identity: reusing the install id would hand back the
@@ -53,9 +66,11 @@ class SecureSettings {
   }
 
   /// Removes the session and vocabulary, returning the app to the state it
-  /// starts in on a fresh install.
+  /// starts in on a fresh install. The recorded legal acceptance is cleared too.
   Future<void> clear() async {
     await clearSession();
     await _storage.delete(key: _keyVocabulary);
+    await _storage.delete(key: _keyLegalVersion);
+    await _storage.delete(key: _keyLegalAcceptedAt);
   }
 }

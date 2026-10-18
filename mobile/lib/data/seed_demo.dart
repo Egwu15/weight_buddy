@@ -65,7 +65,7 @@ Future<void> seedDemoData(AppDatabase db, {bool force = false}) async {
         'sessions a week will do it. Want a simple leg routine to start with?',
         yesterday.millisecondsSinceEpoch + 7 * 3600000 + 60000),
     ('user',
-        'Yes please — I’d like a leg day I can do at the gym twice a week.',
+        'Yes please. I’d like a leg day I can do at the gym twice a week.',
         yesterday.millisecondsSinceEpoch + 7 * 3600000 + 120000),
     ('assistant',
         'Leg Day A: 3×12 bodyweight squats, 3×10 walking lunges each leg, '
@@ -75,7 +75,7 @@ Future<void> seedDemoData(AppDatabase db, {bool force = false}) async {
     ('user', 'I usually train in the evening after work, around 7pm.',
         today.millisecondsSinceEpoch + 19 * 3600000),
     ('assistant',
-        'Evening training works well — just have a protein snack about an hour '
+        'Evening training works well. Have a protein snack about an hour '
         'before, like grilled suya. Remembered that for our future chats.',
         today.millisecondsSinceEpoch + 19 * 3600000 + 60000),
   ];

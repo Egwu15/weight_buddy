@@ -59,6 +59,9 @@ func TestLoad(t *testing.T) {
 				RevenueCatEntitlementID:   "pro",
 				GoogleWebClientID:         "test-client.apps.googleusercontent.com",
 				TrustedProxies:            defaultTrustedProxies(),
+				AppMinimumVersion:         "1.0.0",
+				AppStoreURL:               "https://play.google.com/store/apps/details?id=com.tedif.weight_buddy",
+				AppUpdateMessage:          "Update Weight Buddy to keep logging your meals and workouts.",
 			},
 		},
 		{
@@ -82,6 +85,10 @@ func TestLoad(t *testing.T) {
 				"REVENUECAT_WEBHOOK_SECRET":  "whsec",
 				"REVENUECAT_ENTITLEMENT":     "premium",
 				"TRUSTED_PROXIES":            "10.0.0.0/8, 192.168.1.5",
+				"ADMIN_TOKEN":                "admin-token-1234567890",
+				"MIN_APP_VERSION":            "1.2.3",
+				"APP_STORE_URL":              "https://play.google.com/store/apps/details?id=com.tedif.weight_buddy",
+				"APP_UPDATE_MESSAGE":         "Please update to continue.",
 			}),
 			want: Config{
 				Env:                       "production",
@@ -104,6 +111,10 @@ func TestLoad(t *testing.T) {
 				RevenueCatWebhookSecret:   "whsec",
 				RevenueCatEntitlementID:   "premium",
 				GoogleWebClientID:         "test-client.apps.googleusercontent.com",
+				AdminToken:                "admin-token-1234567890",
+				AppMinimumVersion:         "1.2.3",
+				AppStoreURL:               "https://play.google.com/store/apps/details?id=com.tedif.weight_buddy",
+				AppUpdateMessage:          "Please update to continue.",
 				TrustedProxies: []netip.Prefix{
 					netip.MustParsePrefix("10.0.0.0/8"),
 					netip.MustParsePrefix("192.168.1.5/32"),
@@ -133,6 +144,9 @@ func TestLoad(t *testing.T) {
 				RevenueCatEntitlementID:   "pro",
 				GoogleWebClientID:         "test-client.apps.googleusercontent.com",
 				TrustedProxies:            defaultTrustedProxies(),
+				AppMinimumVersion:         "1.0.0",
+				AppStoreURL:               "https://play.google.com/store/apps/details?id=com.tedif.weight_buddy",
+				AppUpdateMessage:          "Update Weight Buddy to keep logging your meals and workouts.",
 			},
 		},
 		{
@@ -199,6 +213,31 @@ func TestLoad(t *testing.T) {
 			name:    "invalid trusted proxies",
 			env:     withRequired(map[string]string{"TRUSTED_PROXIES": "not-an-ip"}),
 			wantErr: "TRUSTED_PROXIES",
+		},
+		{
+			name:    "admin token too short",
+			env:     withRequired(map[string]string{"ADMIN_TOKEN": "too-short"}),
+			wantErr: "ADMIN_TOKEN",
+		},
+		{
+			name:    "invalid minimum app version",
+			env:     withRequired(map[string]string{"MIN_APP_VERSION": "latest"}),
+			wantErr: "MIN_APP_VERSION",
+		},
+		{
+			name:    "invalid app store url",
+			env:     withRequired(map[string]string{"APP_STORE_URL": "not-a-url"}),
+			wantErr: "APP_STORE_URL",
+		},
+		{
+			name:    "insecure app store url",
+			env:     withRequired(map[string]string{"APP_STORE_URL": "http://play.google.com/store"}),
+			wantErr: "APP_STORE_URL",
+		},
+		{
+			name:    "empty update message",
+			env:     withRequired(map[string]string{"APP_UPDATE_MESSAGE": "  "}),
+			wantErr: "APP_UPDATE_MESSAGE",
 		},
 		{
 			name: "multiple errors are joined",

@@ -25,4 +25,7 @@ type Store interface {
 	UsageTodayByKind(ctx context.Context, userID string) (map[string]float64, error)
 	RecordUsage(ctx context.Context, userID, kind string, units, cost float64) error
 	DailySpend(ctx context.Context) (float64, error)
+
+	// AdminStats backs the read-only operator page.
+	AdminStats(ctx context.Context) (store.AdminStats, error)
 }

@@ -52,9 +52,9 @@ class MemoryScreen extends ConsumerWidget {
                       const SizedBox(height: 4),
                       Text(
                         memoryEnabled
-                            ? 'New facts are distilled from conversations and used '
-                                'as context. Stored only on this device.'
-                            : 'Memory is off — nothing is distilled or injected.',
+                            ? 'Facts from your chats are kept on this device '
+                                'and reused as context.'
+                            : 'Memory is off. Nothing is distilled or injected.',
                         style: AppText.bodyMuted(fontSize: 13),
                       ),
                     ],

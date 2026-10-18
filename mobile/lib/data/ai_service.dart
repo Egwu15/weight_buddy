@@ -417,7 +417,7 @@ class AiService {
     final text = (body['text'] as String?)?.trim();
     if (text == null || text.isEmpty) {
       throw const AiServiceException(
-          'Couldn\'t hear anything in that recording — try again a little closer.');
+          'Couldn\'t hear anything in that recording. Try again a little closer.');
     }
     return text;
   }
@@ -463,7 +463,7 @@ class AiService {
     final reply = (body['reply'] as String?)?.trim();
     if (reply == null || reply.isEmpty) {
       throw const AiServiceException(
-          'The coach went quiet — try asking again.');
+          'The coach went quiet. Try asking again.');
     }
     return reply;
   }

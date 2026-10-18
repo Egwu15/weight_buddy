@@ -6,12 +6,15 @@ this file only sequences the work.
 
 ## Now — before shipping
 
-- **Review the legal copy.** The privacy policy, terms and deletion page are drafts; have them
-  reviewed by a qualified person before publishing. The privacy and deletion URLs go into the Play
-  Console listing and the Data safety form.
 - **Decide on subscriptions.** The backend already models a paid entitlement, but the app ships no
   purchase SDK (the RevenueCat seam is a no-op), so nothing is purchasable. Either wire RevenueCat in
   the app or drop the paid tier.
+- **Publish the store listing.** Upload the feature graphic, screenshots and paste-ready submission
+  sheet from `mobile/store/listing.md` to Play Console. It follows the Console order: main listing,
+  store settings, app content declarations (content rating, target audience, data safety, account
+  deletion, health apps), pricing, release and the force-update setting.
+- **Set the force-update floor after release.** Keep `MIN_APP_VERSION=1.0.0` until `1.0.5` is at
+  100% rollout, then raise it only when an old build must be retired.
 
 ## Next
 
@@ -28,7 +31,8 @@ this file only sequences the work.
 
 - **Tidy dead code:** `Store.Pool()`, and `CreateOrGetUser`/`UpsertEntitlement` (test-only, one still
   on the `httpapi.Store` interface).
-- **Replace the home page screenshot placeholders** with real captures.
+- **Add an iOS store URL for force update.** The gate currently returns one Play Store URL; an iOS
+  build needs a per-platform URL before shipping.
 - **Prepare the Litpace backend:** copy this template (keep auth, entitlements, limits and ops;
   replace the tracker's AI endpoints with TTS + timestamp alignment and per-document audio caching).
   Do not edit this repo while doing it (`AGENTS.md`).

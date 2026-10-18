@@ -14,6 +14,7 @@ import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
+import '../widgets/app_toast.dart';
 import '../widgets/macro_pill.dart';
 import '../widgets/meal_edit_parts.dart';
 
@@ -41,6 +42,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
   final List<double> _levels = [];
   String _errorMessage = '';
   bool _tooShort = false;
+  bool _retryingConnection = false;
 
   Uint8List? _audioBytes;
   String _fileName = '';
@@ -207,6 +209,32 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
     return '${(s ~/ 60).toString().padLeft(2, '0')}:${(s % 60).toString().padLeft(2, '0')}';
   }
 
+  /// The "no session yet" state: shown when sign-in failed (usually offline at
+  /// first launch) or a stored session was rejected. The likely cause is the
+  /// connection, so retrying sign-in is the primary action; Settings is the
+  /// fallback for a rejected session.
+  Widget _needsKeyView() => _Tight(
+        child: _NeedsKeyView(
+          retrying: _retryingConnection,
+          onRetry: _retryConnection,
+          onGoToSettings: () =>
+              Navigator.of(context).pop(kRecordSheetGoToSettings),
+        ),
+      );
+
+  Future<void> _retryConnection() async {
+    setState(() => _retryingConnection = true);
+    await ref.read(settingsProvider.notifier).refreshSession();
+    if (!mounted) return;
+    setState(() => _retryingConnection = false);
+    if (ref.read(aiServiceProvider) == null) {
+      AppToast.show(
+        context,
+        'Still no connection. Check your network and try again.',
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final service = ref.watch(aiServiceProvider);
@@ -214,12 +242,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
     if (service == null &&
         _stage != _Stage.error &&
         _stage != _Stage.processing) {
-      body = _Tight(
-        child: _NeedsKeyView(
-          onGoToSettings: () =>
-              Navigator.of(context).pop(kRecordSheetGoToSettings),
-        ),
-      );
+      body = _needsKeyView();
     } else {
       body = switch (_stage) {
         _Stage.idle => _Tight(
@@ -256,12 +279,7 @@ class _RecordSheetState extends ConsumerState<RecordSheet> {
             _stage = _Stage.type;
           }),
         ),
-        _Stage.needsKey => _Tight(
-          child: _NeedsKeyView(
-            onGoToSettings: () =>
-                Navigator.of(context).pop(kRecordSheetGoToSettings),
-          ),
-        ),
+        _Stage.needsKey => _needsKeyView(),
         _Stage.error => _Tight(
           child: _ErrorView(
             message: _errorMessage,
@@ -381,7 +399,7 @@ class _IdleView extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           child: Text(
             tooShort
-                ? 'That was too short — hold a little longer.'
+                ? 'That was too short. Hold a little longer.'
                 : 'Release when you’re done',
             key: ValueKey(tooShort),
             style: AppText.bodyMuted(fontSize: 13),
@@ -448,7 +466,7 @@ class _TypeViewState extends State<_TypeView> {
         Text('Log by typing', style: AppText.headline()),
         const SizedBox(height: 8),
         Text(
-          'Noisy room or tired voice — just type what you ate '
+          'Noisy room or tired voice? Just type what you ate '
           'or how you moved.',
           textAlign: TextAlign.center,
           style: AppText.bodyMuted(),
@@ -691,7 +709,7 @@ class _ConfirmViewState extends State<_ConfirmView> {
                       size: 16,
                     ),
                     label: const Text(
-                      'The words came out wrong — fix and re-parse',
+                      'The words came out wrong. Fix and re-parse',
                     ),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.smoke,
@@ -972,9 +990,15 @@ class _ErrorView extends StatelessWidget {
 }
 
 class _NeedsKeyView extends StatelessWidget {
-  const _NeedsKeyView({required this.onGoToSettings});
+  const _NeedsKeyView({
+    required this.onGoToSettings,
+    required this.onRetry,
+    required this.retrying,
+  });
 
   final VoidCallback onGoToSettings;
+  final VoidCallback onRetry;
+  final bool retrying;
 
   @override
   Widget build(BuildContext context) {
@@ -999,16 +1023,27 @@ class _NeedsKeyView extends StatelessWidget {
         Text('Connect to Weight Buddy', style: AppText.headline()),
         const SizedBox(height: 8),
         Text(
-          'Logging needs a connection to the service. Check your connection, '
-          'then try again — the app signs you in automatically.',
+          'Logging needs a connection. Check your network and try again. '
+          'The app signs you in automatically.',
           textAlign: TextAlign.center,
           style: AppText.bodyMuted(),
         ),
         const SizedBox(height: 24),
         FilledButton.icon(
+          onPressed: retrying ? null : onRetry,
+          icon: retrying
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh_rounded, size: 20),
+          label: Text(retrying ? 'Trying again…' : 'Try again'),
+        ),
+        const SizedBox(height: 4),
+        TextButton(
           onPressed: onGoToSettings,
-          icon: const Icon(Icons.settings_rounded, size: 20),
-          label: const Text('Open Settings'),
+          child: const Text('Open Settings'),
         ),
       ],
     );

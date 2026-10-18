@@ -185,7 +185,7 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
 
   String get _displayTarget {
     final v = double.tryParse(_targetText.trim().replaceAll(',', ''));
-    if (v == null || v <= 0) return '—';
+    if (v == null || v <= 0) return '–';
     return '${Formatters.kcal(v)} kcal';
   }
 
@@ -234,7 +234,7 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
         );
     if (!mounted) return;
     setState(() => _saving = false);
-    AppToast.show(context, 'Saved — target ${Formatters.kcal(target)} kcal.');
+    AppToast.show(context, 'Saved. Target ${Formatters.kcal(target)} kcal.');
   }
 
   @override
@@ -340,10 +340,10 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
                 const SizedBox(height: 8),
                 Text(
                   _customMode
-                      ? 'Custom — you set this number. It won\'t change with '
+                      ? 'Custom: you set this number. It won\'t change with '
                           'your weight. Switch back to automatic to follow your '
                           'weigh-ins again.'
-                      : 'Automatic — follows your profile and latest weigh-in. '
+                      : 'Automatic: follows your profile and latest weigh-in. '
                           'A weigh-in that moves your weight by 0.5 kg or more '
                           'updates the target.',
                   style: AppText.bodyMuted(fontSize: 12),
@@ -353,7 +353,7 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
                       'Your profile suggests '
-                      '${Formatters.kcal(estimate)} kcal — tap '
+                      '${Formatters.kcal(estimate)} kcal. Tap '
                       '"Back to automatic" to use it.',
                       style: AppText.bodyMuted(fontSize: 12),
                     ),
@@ -374,7 +374,7 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
             else
               Text(
                 weighIns.isEmpty
-                    ? 'Add a weigh-in — the estimate uses your latest weight.'
+                    ? 'Add a weigh-in. The estimate uses your latest weight.'
                     : 'Fill in height, date of birth, sex and activity to see '
                         'the estimate.',
                 style: AppText.bodyMuted(fontSize: 12),
@@ -384,7 +384,7 @@ class _TargetsScreenState extends ConsumerState<TargetsScreen> {
           Text('Profile', style: AppText.label()),
           const SizedBox(height: 8),
           Text(
-            'The target above is calculated from these — change anything and '
+            'The target above is calculated from these. Change anything and '
             'it updates.',
             style: AppText.bodyMuted(),
           ),
@@ -520,12 +520,12 @@ class _LoggingCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             following
-                ? 'Read from your recent weigh-ins and food logs — what your '
+                ? 'Read from your recent weigh-ins and food logs: what your '
                     'body actually runs on. Logged workouts already show up in '
                     'your weight trend, so nothing is double-counted. Your '
                     'target follows this number automatically whenever your '
                     'weight moves 0.5 kg or more.'
-                : 'Read from your recent weigh-ins and food logs — what your '
+                : 'Read from your recent weigh-ins and food logs: what your '
                     'body actually runs on. Logged workouts already show up in '
                     'your weight trend, so nothing is double-counted. Switch '
                     'back to automatic and your target will follow this number '

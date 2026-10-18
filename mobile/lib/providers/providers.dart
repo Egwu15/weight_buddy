@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../data/app_database.dart';
+import '../data/app_update.dart';
 import '../data/backend_auth.dart';
 import '../data/google_signin.dart';
 import '../data/revenuecat_identity.dart';
@@ -24,6 +26,17 @@ import '../utils/streaks.dart';
 /// The single local database.
 final databaseProvider = FutureProvider<AppDatabase>(
   (ref) => AppDatabase.open(),
+);
+
+/// The installed app version, read from the platform once per launch.
+final appVersionProvider = FutureProvider<String>((ref) async {
+  final info = await PackageInfo.fromPlatform();
+  return info.version;
+});
+
+/// The public force-update check. Overridable in tests.
+final appUpdateServiceProvider = Provider<AppUpdateService>(
+  (ref) => AppUpdateService(),
 );
 
 /// Persisted app settings: the backend session (anonymous or Google) plus the
@@ -314,6 +327,7 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
   static const kReminderEnabled = 'reminder_enabled';
   static const kReminderTime = 'reminder_time';
   static const kMemoryEnabled = 'memory_enabled';
+  static const kCoachDisclaimerDismissed = 'coach_disclaimer_dismissed';
   static const kHeightCm = 'height_cm';
   static const kBirthday = 'birthday';
   static const kAge = 'age';
@@ -336,6 +350,8 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
         .toList();
     final memoryEnabled =
         (await db.getSetting(kMemoryEnabled) ?? 'true') == 'true';
+    final coachDisclaimerDismissed =
+        (await db.getSetting(kCoachDisclaimerDismissed) ?? 'false') == 'true';
     final heightCm = double.tryParse(await db.getSetting(kHeightCm) ?? '');
     var birthday = Formatters.parseIsoDate(await db.getSetting(kBirthday));
     // Legacy installs stored a static age with no birthday. Synthesise one
@@ -372,6 +388,7 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
         minute: timeParts.length > 1 ? timeParts[1] : 0,
       ),
       memoryEnabled: memoryEnabled,
+      coachDisclaimerDismissed: coachDisclaimerDismissed,
       heightCm: heightCm,
       birthday: birthday,
       sex: sex,
@@ -391,6 +408,10 @@ class AppSettingsController extends AsyncNotifier<AppSettingsData> {
       '${data.reminderTime.hour}:${data.reminderTime.minute}',
     );
     await db.setSetting(kMemoryEnabled, data.memoryEnabled.toString());
+    await db.setSetting(
+      kCoachDisclaimerDismissed,
+      data.coachDisclaimerDismissed.toString(),
+    );
     await db.setSetting(kHeightCm, data.heightCm?.toString() ?? '');
     await db.setSetting(
       kBirthday,

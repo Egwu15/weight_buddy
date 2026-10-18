@@ -33,6 +33,27 @@ class _TestSettingsController extends SettingsController {
       const AppSettings(token: '', vocabulary: '');
 }
 
+/// Starts signed out, then signs in on retry, so the record sheet's "Try again"
+/// path can be exercised without touching the network. With [signInOnRetry]
+/// false the retry keeps failing, covering the offline message.
+class _RetryableSettingsController extends SettingsController {
+  _RetryableSettingsController({this.signInOnRetry = true});
+
+  final bool signInOnRetry;
+  bool signedIn = false;
+
+  @override
+  Future<AppSettings> build() async =>
+      AppSettings(token: signedIn ? 'test-token' : '', vocabulary: '');
+
+  @override
+  Future<void> refreshSession() async {
+    if (!signInOnRetry) return;
+    signedIn = true;
+    state = AsyncData(const AppSettings(token: 'test-token', vocabulary: ''));
+  }
+}
+
 class _KeyedSettingsController extends SettingsController {
   @override
   Future<AppSettings> build() async => const AppSettings(
@@ -60,6 +81,23 @@ class _TestAppSettingsController extends AppSettingsController {
   @override
   Future<AppSettingsData> build() async =>
       const AppSettingsData(profileCompleted: true);
+}
+
+/// A completed profile with in-memory saves, so the coach disclaimer can be
+/// dismissed without touching the database plugin.
+class _DismissableAppSettingsController extends AppSettingsController {
+  AppSettingsData _data = const AppSettingsData(profileCompleted: true);
+
+  @override
+  Future<AppSettingsData> build() async => _data;
+
+  @override
+  Future<void> save(AppSettingsData data) async {
+    _data = data;
+    state = AsyncData(data);
+  }
+
+  bool get disclaimerDismissed => _data.coachDisclaimerDismissed;
 }
 
 /// A brand-new install — no profile yet, so the shell shows onboarding.
@@ -669,6 +707,81 @@ void main() {
       await tester.tap(find.text('Open Settings'));
       await tester.pumpAndSettle();
       expect(find.text('Account & voice'), findsOneWidget);
+    });
+
+    testWidgets('record sheet retries the connection from the connect prompt',
+        (tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(_RetryableSettingsController.new),
+          dayLogsProvider.overrideWith(_FakeLogsController.new),
+          appSettingsProvider.overrideWith(_TestAppSettingsController.new),
+          weighInsProvider.overrideWith(_FakeWeighInsController.new),
+          chatMessagesProvider.overrideWith(_FakeChatController.new),
+          memoriesProvider.overrideWith(_FakeMemoriesController.new),
+          exercisesProvider.overrideWith(_FakeExercisesController.new),
+          monthTotalsProvider.overrideWith(
+              (ref, month) async => const <String, LogTotals>{}),
+          streakProvider.overrideWith(
+              (ref) async => const Streaks(logging: 4, onPlan: 3)),
+        ],
+        child: const WeightBuddyApp(),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Log by voice').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Connect to Weight Buddy'), findsOneWidget);
+
+      // The likely cause is the connection, so "Try again" signs in and the
+      // sheet moves on to the mic instead of sending the user to Settings.
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Connect to Weight Buddy'), findsNothing);
+      expect(find.text('Hold to speak'), findsOneWidget);
+    });
+
+    testWidgets('record sheet toasts when the connection retry fails',
+        (tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider
+              .overrideWith(() => _RetryableSettingsController(
+                    signInOnRetry: false,
+                  )),
+          dayLogsProvider.overrideWith(_FakeLogsController.new),
+          appSettingsProvider.overrideWith(_TestAppSettingsController.new),
+          weighInsProvider.overrideWith(_FakeWeighInsController.new),
+          chatMessagesProvider.overrideWith(_FakeChatController.new),
+          memoriesProvider.overrideWith(_FakeMemoriesController.new),
+          exercisesProvider.overrideWith(_FakeExercisesController.new),
+          monthTotalsProvider.overrideWith(
+              (ref, month) async => const <String, LogTotals>{}),
+          streakProvider.overrideWith(
+              (ref) async => const Streaks(logging: 4, onPlan: 3)),
+        ],
+        child: const WeightBuddyApp(),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Log by voice').first);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+
+      // Still signed out: the prompt stays and the failure is a toast, not text
+      // crowding the sheet.
+      expect(find.text('Connect to Weight Buddy'), findsOneWidget);
+      expect(
+        find.text('Still no connection. Check your network and try again.'),
+        findsOneWidget,
+      );
+
+      // Let the toast's hold elapse so no timer is left pending.
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
     });
 
     testWidgets('settings hub fans out to focused pages', (tester) async {
@@ -1310,6 +1423,39 @@ void main() {
       expect(find.text('Memory'), findsWidgets);
       // Not connected -> composer prompts for a connection.
       expect(find.text('Connect to chat with the coach'), findsOneWidget);
+    });
+
+    testWidgets('coach medical disclaimer can be dismissed and stays hidden',
+        (tester) async {
+      final controller = _DismissableAppSettingsController();
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith(_TestSettingsController.new),
+          dayLogsProvider.overrideWith(_FakeLogsController.new),
+          appSettingsProvider.overrideWith(() => controller),
+          weighInsProvider.overrideWith(_FakeWeighInsController.new),
+          chatMessagesProvider.overrideWith(_FakeChatController.new),
+          memoriesProvider.overrideWith(_FakeMemoriesController.new),
+          exercisesProvider.overrideWith(_FakeExercisesController.new),
+          monthTotalsProvider.overrideWith(
+              (ref, month) async => const <String, LogTotals>{}),
+          streakProvider.overrideWith(
+              (ref) async => const Streaks(logging: 4, onPlan: 3)),
+        ],
+        child: const WeightBuddyApp(),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Coach'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('not a doctor'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Dismiss'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('not a doctor'), findsNothing);
+      expect(controller.disclaimerDismissed, isTrue);
     });
 
     testWidgets('coach renders a persisted conversation', (tester) async {

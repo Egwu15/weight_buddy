@@ -202,7 +202,7 @@ class ActivityDropdown extends StatelessWidget {
           errorText: errorText,
           helperText: current == null
               ? 'Scales your maintenance estimate'
-              : '×${current.factor} — ${current.description}',
+              : '×${current.factor} · ${current.description}',
           suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
         ),
         child: Text(
@@ -361,7 +361,7 @@ class BirthdayField extends StatelessWidget {
         if (age != null) ...[
           const SizedBox(height: 6),
           Text(
-            '$age ${age == 1 ? 'year' : 'years'} old — used in the '
+            '$age ${age == 1 ? 'year' : 'years'} old. Used in the '
             'calorie estimate.',
             style: AppText.bodyMuted(fontSize: 12),
           ),

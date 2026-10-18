@@ -27,6 +27,7 @@ with `/healthz`, graceful shutdown and migrations run by a separate command.
 - `POST /v1/auth/google` `{id_token, install_id}` -> `{token, user_id, linked}`;
   an anonymous `Authorization` session on the request is linked to the same
   account, so usage and any RevenueCat purchase stay attached
+- `GET  /v1/app/version` -> minimum supported version, store URL and message
 - `GET  /v1/me` -> user, entitlement, remaining limits, spend remaining
 - `DELETE /v1/me` -> 204; deletes the account, its entitlement and usage, and
   its RevenueCat event records. Idempotent: a retry with the same token is 204
@@ -52,6 +53,23 @@ All app-specific text lives in one file, `web/src/config.ts`, so the template
 can be copied to another app by editing that file. The pages are pre-rendered
 to static HTML at build time, so they read correctly with JavaScript disabled;
 the client bundle only hydrates.
+
+### Legal document versions
+
+The privacy policy and terms are versioned by effective date. When either
+changes, freeze the outgoing version **before** editing the copy:
+
+    cd backend && make legal-snapshot                # effective date = today
+    cd backend && make legal-snapshot DATE=2026-09-01
+
+That writes self-contained, immutable snapshots to
+`web/public/legal/archive/<date>/<doc>/` (CSS inlined, JavaScript dropped),
+served at `/legal/archive/<date>/privacy/` and `/legal/archive/<date>/terms/`.
+Add the date to `legalArchive` in `web/src/config.ts` so the current pages link
+back to it, and set `kLegalVersion` in `mobile/lib/config.dart` to the new "last
+updated" date. The app records the accepted version plus a timestamp in secure
+storage when onboarding completes. Never edit a frozen snapshot after it is
+written.
 
 ## Running locally
 
@@ -123,6 +141,37 @@ and per-kind costs live in `internal/limits` (a Go struct), not the database.
 The public site's text and links live in `web/src/config.ts`, not in the
 environment.
 
-Fill in the `{{...}}` placeholders in `web/src/config.ts` before publishing. The
-site build prints a warning listing any that remain and, when
-`SITE_STRICT_PLACEHOLDERS=1` is set, fails instead of emitting them.
+### Admin
+
+Setting `ADMIN_TOKEN` (16+ chars) enables a read-only operator page at `/admin`:
+user counts, Google links, today's signups, entitlement buckets, AI usage by
+kind, today's spend against the cap, and RevenueCat webhook counts. It shows
+aggregates only, never install ids, tokens or user text. The route is
+unregistered when `ADMIN_TOKEN` is empty. Sign in at `/admin/login` with the
+username `admin` and the token as the password; the session is a signed,
+HttpOnly, SameSite=Strict cookie that lasts 12 hours (Secure in production) and
+the Sign out button clears it. HTTP Basic auth is still accepted for scripts.
+Generate a token with `openssl rand -hex 24` and keep it out of the repo.
+
+### Force update
+
+The app checks `GET /v1/app/version` at launch and whenever it returns to the
+foreground. The response carries `minimum_version`, `store_url` and `message`.
+An install older than the minimum sees a blocking update screen with an
+"Update now" button; there is no dismiss. The check is public and uncached
+(`Cache-Control: no-store`).
+
+```sh
+MIN_APP_VERSION=1.0.5
+APP_STORE_URL=https://play.google.com/store/apps/details?id=com.tedif.weight_buddy
+APP_UPDATE_MESSAGE=Update Weight Buddy to keep logging your meals and workouts.
+```
+
+Keep `MIN_APP_VERSION` at `1.0.0` until an old build must be retired. Raise it
+only after the replacement is live on Play, or every user on the old build is
+locked out immediately. The app fails open when the endpoint is unreachable or
+the response is malformed, so an outage never blocks offline logging.
+
+The site config in `web/src/config.ts` is filled in for Weight Buddy. Keep its
+`lastUpdated`, `legalArchive` and `mobile/lib/config.dart` `kLegalVersion` in
+sync. The strict site build still rejects any `{{...}}` placeholder.

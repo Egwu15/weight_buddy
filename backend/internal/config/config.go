@@ -10,7 +10,9 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -36,7 +38,16 @@ const (
 	defaultOpenAIBaseURL   = "https://api.openai.com/v1"
 
 	defaultRevenueCatEntitleID = "pro"
+
+	defaultAppMinimumVersion = "1.0.0"
+	defaultAppStoreURL       = "https://play.google.com/store/apps/details?id=com.tedif.weight_buddy"
+	defaultAppUpdateMessage  = "Update Weight Buddy to keep logging your meals and workouts."
 )
+
+// appVersionPattern accepts the dotted numeric versions the app reports
+// (for example 1.0.5 or 1.0.5.2), plus optional pre-release/build suffixes
+// that are ignored when comparing.
+var appVersionPattern = regexp.MustCompile(`^\d+(\.\d+){0,3}([-+][0-9A-Za-z.-]+)?$`)
 
 // Config is the fully resolved, validated runtime configuration.
 type Config struct {
@@ -86,6 +97,22 @@ type Config struct {
 	// GoogleWebClientID is the OAuth Web client id that Google ID tokens must
 	// be minted for. Required: it is the audience the backend verifies.
 	GoogleWebClientID string
+
+	// AdminToken enables the read-only /admin page when non-empty. It is the
+	// password for HTTP Basic auth (user "admin"). Empty disables the route
+	// entirely, so the page is absent unless deliberately turned on.
+	AdminToken string
+
+	// AppMinimumVersion is the oldest installed app version still allowed to
+	// use the service. The app checks it at launch and blocks with an update
+	// screen when it is older. Bump it in production when an old build must be
+	// retired; the default never forces an update.
+	AppMinimumVersion string
+	// AppStoreURL is where the update screen sends the user. It must be an
+	// absolute http(s) URL.
+	AppStoreURL string
+	// AppUpdateMessage is the user-facing sentence shown on the update screen.
+	AppUpdateMessage string
 }
 
 // IsProduction reports whether the service is running in production mode.
@@ -207,6 +234,27 @@ func load(lookup envLookup) (Config, error) {
 		errs = append(errs, errors.New("GOOGLE_WEB_CLIENT_ID is required"))
 	}
 
+	cfg.AdminToken = strings.TrimSpace(getEnv(lookup, "ADMIN_TOKEN", ""))
+	if cfg.AdminToken != "" && len(cfg.AdminToken) < 16 {
+		errs = append(errs, errors.New("ADMIN_TOKEN must be at least 16 characters"))
+	}
+
+	if v, err := parseAppVersion(lookup, "MIN_APP_VERSION", defaultAppMinimumVersion); err != nil {
+		errs = append(errs, err)
+	} else {
+		cfg.AppMinimumVersion = v
+	}
+
+	cfg.AppStoreURL = strings.TrimSpace(getEnv(lookup, "APP_STORE_URL", defaultAppStoreURL))
+	if err := validateHTTPSURL("APP_STORE_URL", cfg.AppStoreURL); err != nil {
+		errs = append(errs, err)
+	}
+
+	cfg.AppUpdateMessage = strings.TrimSpace(getEnv(lookup, "APP_UPDATE_MESSAGE", defaultAppUpdateMessage))
+	if cfg.AppUpdateMessage == "" {
+		errs = append(errs, errors.New("APP_UPDATE_MESSAGE must not be empty"))
+	}
+
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)
 	}
@@ -219,6 +267,29 @@ func validateAddr(addr string) error {
 	}
 	if _, _, err := net.SplitHostPort(addr); err != nil {
 		return fmt.Errorf("HTTP_ADDR must be a host:port address: %w", err)
+	}
+	return nil
+}
+
+// parseAppVersion validates MIN_APP_VERSION. Only dotted numeric versions are
+// accepted because the app's comparison ignores any suffix.
+func parseAppVersion(lookup envLookup, key, fallback string) (string, error) {
+	raw := strings.TrimSpace(getEnv(lookup, key, fallback))
+	if !appVersionPattern.MatchString(raw) {
+		return fallback, fmt.Errorf("%s must be a dotted version such as 1.0.5, got %q", key, raw)
+	}
+	return raw, nil
+}
+
+// validateHTTPSURL requires an absolute https URL so the update button always
+// hands the platform browser a secure store link.
+func validateHTTPSURL(key, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%s is not a valid URL: %w", key, err)
+	}
+	if u.Scheme != "https" || u.Host == "" {
+		return fmt.Errorf("%s must be an absolute https URL, got %q", key, raw)
 	}
 	return nil
 }

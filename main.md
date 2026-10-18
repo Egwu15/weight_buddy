@@ -313,6 +313,7 @@ public website. It never stores the user's log content.
 |---|---|
 | `POST /v1/auth/anonymous` | `{install_id}` -> `{token, user_id}`; creates/looks up the device account, counting the per-device free-account cap. |
 | `POST /v1/auth/google` | `{id_token, install_id}` -> `{token, user_id, linked}`; verifies the Google token, stores only the subject, links an anonymous session when present. |
+| `GET /v1/app/version` | Public force-update check: oldest supported version, store URL and message. |
 | `GET /v1/me` | User, entitlement, per-kind remaining limits for today, and remaining daily spend. |
 | `DELETE /v1/me` | Deletes the account, its entitlement and usage, and its stored RevenueCat event copies. Idempotent (204). |
 | `POST /v1/webhooks/revenuecat` | RevenueCat webhook; `Authorization` secret compared in constant time; idempotent on the event id. |
@@ -404,8 +405,16 @@ Config is environment-only and validated at startup, so a bad deploy crash-loops
 rather than serving with missing settings. Required: `DATABASE_URL`, `JWT_SECRET`,
 `GOOGLE_WEB_CLIENT_ID`. Everything else has a default: HTTP address, log level,
 request/shutdown timeouts, JWT TTL, the abuse limits above, the AI provider base
-URL/models/timeout, the RevenueCat webhook secret and entitlement id, and the
-trusted-proxy networks (Caddy on loopback by default). See `backend/.env.example`.
+URL/models/timeout, the RevenueCat webhook secret and entitlement id, the
+trusted-proxy networks (Caddy on loopback by default), and the force-update gate
+(`MIN_APP_VERSION`, `APP_STORE_URL`, `APP_UPDATE_MESSAGE`). See
+`backend/.env.example`.
+
+The force-update gate is public and uncached. The app calls it at launch and on
+resume, compares its `versionName` with `minimum_version`, and shows a blocking
+screen when it is older. The default minimum is `1.0.0`, so no build is forced
+until the operator raises it. The app fails open when the check is unreachable
+or malformed, keeping offline logging usable during an outage.
 
 ### 5.11 Public website
 
@@ -419,10 +428,13 @@ trusted-proxy networks (Caddy on loopback by default). See `backend/.env.example
   legal copy) lives in one file, `backend/web/src/config.ts`, so the template can
   be reused for another app by editing that file.
 - All `{{PLACEHOLDER}}` markers are filled (app name, developer, support email,
-  Play URL, site URL, deletion turnaround, governing law — the Federal Republic
-  of Nigeria). The site build fails on any marker left when run with
-  `SITE_STRICT_PLACEHOLDERS=1`. The legal text is still a **draft that needs a
-  qualified review** before publishing (see §10).
+  Play URL, site URL, deletion turnaround, and governing law: the Federal
+  Republic of Nigeria). The site build fails on any marker left when run with
+  `SITE_STRICT_PLACEHOLDERS=1`. The legal text has had a review pass (see §10).
+- The legal documents are versioned by effective date. `make legal-snapshot`
+  freezes the outgoing pages into `web/public/legal/archive/<date>/` as
+  self-contained HTML, `config.legalArchive` links them from the current pages,
+  and the app records the accepted version at onboarding (see D-013).
 
 ### 5.12 Ops & deployment
 
@@ -647,11 +659,10 @@ the ones that matter before shipping.
    entitlement (RevenueCat webhook + paid-tier limits), but the app ships no
    purchase SDK — `mobile/lib/data/revenuecat_identity.dart` is a no-op seam — so
    no subscription can be bought today. Wire RevenueCat in the app to ship it.
-2. **Legal/branding text is a draft.** `backend/web/src/config.ts` still contains
-   `{{DEVELOPER_NAME}}`, `{{SUPPORT_EMAIL}}`, `{{PLAY_STORE_URL}}`, `{{SITE_URL}}`,
-   `{{GOVERNING_LAW}}` and `{{DELETION_DAYS}}`; the site build warns on these and
-   can fail with `SITE_STRICT_PLACEHOLDERS=1`. Have the legal copy reviewed by a
-   qualified person before publishing.
+2. **Legal copy is written, reviewed and versioned.** `backend/web/src/config.ts`
+   no longer contains placeholders; governing law is Nigeria and `2026-10-15` is
+   frozen under `web/public/legal/archive/`. The published privacy and deletion
+   URLs still need to go into the Play Console listing and the Data safety form.
 3. **RevenueCat REST fallback is not implemented** (the backend template's task 5):
    entitlement is read from the DB only, so a lost webhook leaves a paying user on
    free limits until the next event arrives. `/v1/me` reads the row directly.
@@ -665,4 +676,12 @@ the ones that matter before shipping.
 7. **Rate limiting and the spend cap are process-local** (single instance).
 8. **Dead code:** `Store.Pool()` has no callers; `CreateOrGetUser` and
    `UpsertEntitlement` are used only by tests.
-9. **Site screenshots** on the home page are placeholders.
+9. **Play assets are prepared but not uploaded.** `mobile/store/` holds the 512
+   RGBA icon, four 1080x1920 screenshots, the 1024x500 feature graphic and a
+   paste-ready submission sheet in Play Console order (`listing.md`, including
+   content rating, target audience, data safety and health declarations). The
+   home page uses 540x960 copies of three of the screenshots.
+10. **Demo seed covers 28 days**, so on a fresh demo the Today weight card says
+    "first reading" instead of showing a trend.
+11. **Force update is Android/Play only.** The response carries one Play Store
+    URL; add a per-platform store URL before an iOS build ships.

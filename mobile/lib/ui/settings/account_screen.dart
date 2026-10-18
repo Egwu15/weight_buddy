@@ -139,8 +139,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           Text('Your account', style: AppText.label()),
           const SizedBox(height: 8),
           Text(
-            'Weight Buddy signs your device in automatically — no key to '
-            'paste. Your AI allowance is managed by the service.',
+            'Weight Buddy signs your device in automatically, so there’s no '
+            'key to paste. Your AI allowance is handled for you.',
             style: AppText.bodyMuted(),
           ),
           const SizedBox(height: 16),

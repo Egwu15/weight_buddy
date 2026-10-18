@@ -55,7 +55,7 @@ class SettingsScreen extends StatelessWidget {
           _SettingsTile(
             icon: Icons.folder_open_rounded,
             title: 'Data',
-            subtitle: 'Everything lives on this device — delete or demo',
+            subtitle: 'Everything lives on this device. Delete or demo',
             onTap: () => _open(context, const DataScreen()),
           ),
           const SizedBox(height: 24),

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -202,4 +203,59 @@ func (f *fakeStore) RecordUsage(_ context.Context, userID, kind string, units, c
 
 func (f *fakeStore) DailySpend(_ context.Context) (float64, error) {
 	return f.spend, nil
+}
+
+func (f *fakeStore) AdminStats(_ context.Context) (store.AdminStats, error) {
+	var s store.AdminStats
+	now := time.Now()
+	s.UsersTotal = int64(len(f.users))
+	for _, u := range f.users {
+		if u.GoogleSub != nil {
+			s.UsersGoogleLinked++
+		}
+		if u.CreatedAt.After(now.Add(-24 * time.Hour)) {
+			s.UsersCreatedToday++
+		}
+		if u.CreatedAt.After(now.Add(-7 * 24 * time.Hour)) {
+			s.UsersCreatedLast7++
+		}
+	}
+
+	buckets := map[[2]string]int64{}
+	for _, e := range f.entitlements {
+		buckets[[2]string{e.Entitlement, e.Status}]++
+	}
+	for key, count := range buckets {
+		s.Entitlements = append(s.Entitlements, store.AdminEntitlementCount{
+			Entitlement: key[0],
+			Status:      key[1],
+			Count:       count,
+		})
+	}
+	sort.Slice(s.Entitlements, func(i, j int) bool {
+		if s.Entitlements[i].Entitlement != s.Entitlements[j].Entitlement {
+			return s.Entitlements[i].Entitlement < s.Entitlements[j].Entitlement
+		}
+		return s.Entitlements[i].Status < s.Entitlements[j].Status
+	})
+
+	byKind := map[string]float64{}
+	for key, units := range f.usage {
+		if parts := strings.SplitN(key, "|", 2); len(parts) == 2 {
+			byKind[parts[1]] += units
+		}
+	}
+	for kind, units := range byKind {
+		s.UsageToday = append(s.UsageToday, store.AdminUsageRow{
+			Kind:  kind,
+			Calls: 1,
+			Units: units,
+		})
+	}
+	sort.Slice(s.UsageToday, func(i, j int) bool {
+		return s.UsageToday[i].Kind < s.UsageToday[j].Kind
+	})
+
+	s.SpendToday = f.spend
+	return s, nil
 }

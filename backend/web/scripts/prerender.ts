@@ -37,7 +37,7 @@ const pages: Page[] = [
   {
     route: "home",
     out: "index.html",
-    title: `${config.appName} — ${config.tagline}`,
+    title: `${config.appName} - ${config.tagline}`,
     description: config.tagline,
     canonical: `${config.siteUrl}/`,
     expect: config.tagline,
@@ -45,7 +45,7 @@ const pages: Page[] = [
   {
     route: "privacy",
     out: join("privacy", "index.html"),
-    title: `Privacy policy — ${config.appName}`,
+    title: `Privacy policy - ${config.appName}`,
     description: `How ${config.appName} collects, uses and deletes your data.`,
     canonical: `${config.siteUrl}/privacy`,
     expect: "What the AI features send",
@@ -53,7 +53,7 @@ const pages: Page[] = [
   {
     route: "terms",
     out: join("terms", "index.html"),
-    title: `Terms of service — ${config.appName}`,
+    title: `Terms of service - ${config.appName}`,
     description: `The terms for using ${config.appName}.`,
     canonical: `${config.siteUrl}/terms`,
     expect: "Not medical or nutritional advice",
@@ -61,7 +61,7 @@ const pages: Page[] = [
   {
     route: "delete-account",
     out: join("delete-account", "index.html"),
-    title: `Delete your account — ${config.appName}`,
+    title: `Delete your account - ${config.appName}`,
     description: `How to delete your ${config.appName} account.`,
     canonical: `${config.siteUrl}/delete-account`,
     expect: "What gets deleted",
@@ -69,7 +69,7 @@ const pages: Page[] = [
   {
     route: "not-found",
     out: "404.html",
-    title: `Page not found — ${config.appName}`,
+    title: `Page not found - ${config.appName}`,
     description: `Page not found.`,
     canonical: `${config.siteUrl}/`,
     expect: "Page not found",

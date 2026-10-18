@@ -135,7 +135,7 @@ class _EntryEditorSheetState extends ConsumerState<EntryEditorSheet> {
     if (service == null) {
       setState(() {
         _reparseError =
-            'Connect to Weight Buddy to re-parse with AI — or fix '
+            'Connect to Weight Buddy to re-parse, or fix '
             'the quantities by hand below.';
       });
       return;
@@ -275,7 +275,7 @@ class _EntryEditorSheetState extends ConsumerState<EntryEditorSheet> {
           Text(_summary, style: AppText.headline()),
           const SizedBox(height: 4),
           Text(
-            'Fix the words and re-parse, or tweak the quantities below — the '
+            'Fix the words and re-parse, or tweak the quantities below. The '
             'edit keeps this entry’s place in the day.',
             style: AppText.bodyMuted(fontSize: 13),
           ),
@@ -291,7 +291,7 @@ class _EntryEditorSheetState extends ConsumerState<EntryEditorSheet> {
             textCapitalization: TextCapitalization.sentences,
             style: AppText.body(),
             decoration: const InputDecoration(
-              hintText: 'Add the bit you forgot, or correct what the AI misread',
+              hintText: 'Add what you forgot, or fix what was misheard',
             ),
           ),
           const SizedBox(height: 8),
@@ -307,7 +307,7 @@ class _EntryEditorSheetState extends ConsumerState<EntryEditorSheet> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.auto_awesome_rounded, size: 18),
-              label: Text(_reparsing ? 'Re-parsing…' : 'Re-parse with AI'),
+              label: Text(_reparsing ? 'Re-parsing…' : 'Re-parse'),
             ),
           ),
           if (_reparseError != null)

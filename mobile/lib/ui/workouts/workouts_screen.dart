@@ -174,7 +174,7 @@ class _ExerciseCard extends ConsumerWidget {
   void _ask(WidgetRef ref, BuildContext context) {
     ref.read(coachDraftProvider.notifier).draft(
           'Tell me more about the saved exercise '
-          '“${exercise.name}” — form, common mistakes, and how to progress it.',
+          '“${exercise.name}”: form, common mistakes, and how to progress.',
         );
     Navigator.of(context).pop();
   }

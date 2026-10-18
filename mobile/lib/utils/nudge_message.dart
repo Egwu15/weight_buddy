@@ -2,7 +2,7 @@ import '../models/log_entry.dart';
 
 /// The nudge used when a day has nothing logged yet — also the text armed
 /// for tomorrow when today is already complete.
-const defaultNudgeMessage = 'Time to log — what did you eat today?';
+const defaultNudgeMessage = 'Time to log. What did you eat today?';
 
 /// Picks the daily-nudge text from what's been logged today, or returns null
 /// when the day looks complete and no nudge is needed.

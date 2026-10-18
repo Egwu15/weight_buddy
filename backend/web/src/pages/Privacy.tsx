@@ -1,3 +1,4 @@
+import { PreviousLegalVersions } from "../components/PreviousLegalVersions";
 import { config } from "../config";
 
 export function Privacy() {
@@ -19,7 +20,7 @@ export function Privacy() {
           creates an anonymous account for your device from a randomly generated
           install id. If you sign in with Google, we also store the stable
           identifier for that Google account so your account survives a
-          reinstall. We do not store your email address, name or photo — the
+          reinstall. We do not store your email address, name or photo; the
           Google sign-in token is checked and then discarded.
         </li>
         <li>
@@ -42,19 +43,19 @@ export function Privacy() {
 
       <h2>What the AI features send</h2>
       <p>
-        Voice logging and the coach are powered by a third-party AI provider,{" "}
-        {config.aiProviderName}. When you use them, your audio or text is sent
-        from your device to our server and on to {config.aiProviderName} so it
-        can be transcribed, parsed or answered. The text we send may include the
-        food vocabulary you have chosen to configure. Our server does not store
-        that content and does not write it to logs; it records only the usage
-        metadata described above.
+        Voice logging and the coach are powered by a third-party AI service.
+        When you use them, your audio or text is sent from your device to our
+        server and on to that provider so it can be transcribed, parsed or
+        answered. The text we send may include the food vocabulary you have
+        chosen to configure. Our server does not store that content and does
+        not write it to logs; it records only the usage metadata described
+        above.
       </p>
       <p>
         Text you type into the coach, and your recorded voice notes, are
-        therefore processed by {config.aiProviderName} under its own terms and
-        privacy policy. Do not use the AI features to share information you are
-        not comfortable sending to a third-party service.
+        therefore processed by that third-party provider under its own terms
+        and privacy policy. Do not use the AI features to share information you
+        are not comfortable sending to a third-party service.
       </p>
 
       <h2>Where your data lives</h2>
@@ -72,9 +73,9 @@ export function Privacy() {
           content is stored here.
         </li>
         <li>
-          <strong>Third parties.</strong> {config.aiProviderName} processes the
-          audio and text described above. RevenueCat receives your account id
-          and purchase information to manage subscriptions, and Google Play
+          <strong>Third parties.</strong> A third-party AI provider processes
+          the audio and text described above. RevenueCat receives your account
+          id and purchase information to manage subscriptions, and Google Play
           processes payments and keeps its own purchase records. These
           providers handle that data under their own privacy policies.
         </li>
@@ -82,7 +83,7 @@ export function Privacy() {
 
       <h2>How long we keep it</h2>
       <p>
-        Account data — the identifier, entitlement and usage records — is kept
+        Account data (the identifier, entitlement and usage records) is kept
         while your account exists and is deleted when you delete your account.
         Copies of subscription events we received are deleted too, though
         RevenueCat and Google Play keep their own billing records for as long as
@@ -94,7 +95,7 @@ export function Privacy() {
       <p>
         Traffic between the app and our servers is encrypted in transit, and API
         keys for the AI provider are held on the server, never in the app. Our
-        server logs which endpoints were called — never the audio, text or
+        server logs which endpoints were called, never the audio, text or
         tokens involved.
       </p>
 
@@ -127,6 +128,8 @@ export function Privacy() {
         Continued use of the app after a change means you accept the updated
         policy.
       </p>
+
+      <PreviousLegalVersions doc="privacy" />
 
       <h2>Contact</h2>
       <p>

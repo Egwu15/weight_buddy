@@ -2,7 +2,7 @@
 BINARY := weight-buddy
 MIGRATE := weight-buddy-migrate
 
-.PHONY: build web test vet fmt run migrate migrate-status tidy docker docker-up docker-down docker-reset
+.PHONY: build web test vet fmt run migrate migrate-status tidy docker docker-up docker-down docker-reset legal-snapshot
 
 # Build the embedded public site. Its output (web/dist) is required by the Go
 # build: //go:embed fails clearly if it is missing. Dependencies are installed
@@ -11,6 +11,13 @@ MIGRATE := weight-buddy-migrate
 # in web/src/config.ts, so nothing ships unnoticed.
 web:
 	cd web && { [ -d node_modules ] || npm ci; } && SITE_STRICT_PLACEHOLDERS=1 npm run build
+
+# Freeze the current privacy policy and terms into immutable archived copies
+# under web/public/legal/archive/. Run this BEFORE editing the legal copy, then
+# add the date to config.legalArchive. Optionally pass DATE=YYYY-MM-DD (defaults
+# to today). See web/scripts/snapshot-legal.mjs .
+legal-snapshot: web
+	node web/scripts/snapshot-legal.mjs $(DATE)
 
 # build/test/vet/run all compile the module-root webassets package, which
 # embeds web/dist, so they depend on `web`.

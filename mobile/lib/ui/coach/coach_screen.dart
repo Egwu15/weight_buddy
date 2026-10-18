@@ -337,6 +337,13 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
                   style: AppText.bodyMuted(color: AppColors.chili),
                 ),
               ),
+            if (!(ref.watch(appSettingsProvider).value?.coachDisclaimerDismissed ??
+                false))
+              _MedicalDisclaimer(
+                onDismiss: () => ref
+                    .read(appSettingsProvider.notifier)
+                    .patch((s) => s.copyWith(coachDisclaimerDismissed: true)),
+              ),
             _Composer(
               controller: _input,
               enabled: ready && !_sending,
@@ -374,7 +381,7 @@ class _WelcomeCard extends StatelessWidget {
             style: AppText.title(), textAlign: TextAlign.center),
         const SizedBox(height: 8),
         Text(
-          'Ask about your calories, macros, weight trend, streaks — or for '
+          'Ask about your calories, macros, weight trend, streaks, or for '
           'exercise plans. Anything the coach recommends is auto-saved to '
           'your workouts, and it remembers what matters about you.',
           textAlign: TextAlign.center,
@@ -400,6 +407,46 @@ class _WelcomeCard extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Shown on the coach screen until the user dismisses it. The coach is a
+/// general assistant, not a clinician, so its replies must never be mistaken
+/// for medical advice.
+///
+/// This is the app-side statement of the no-medical-advice clause in the terms
+/// (`backend/web/src/pages/Terms.tsx`, "is not a medical device"). Revise the
+/// two together: the wording must not drift apart.
+class _MedicalDisclaimer extends StatelessWidget {
+  const _MedicalDisclaimer({required this.onDismiss});
+
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 6, 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              'The coach is not a doctor, and its replies are not medical '
+              'advice. For a medical condition, diet or exercise concern, see '
+              'a qualified professional.',
+              style: AppText.label(color: AppColors.smoke),
+            ),
+          ),
+          IconButton(
+            onPressed: onDismiss,
+            tooltip: 'Dismiss',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.close_rounded,
+                color: AppColors.smoke, size: 18),
+          ),
+        ],
+      ),
     );
   }
 }

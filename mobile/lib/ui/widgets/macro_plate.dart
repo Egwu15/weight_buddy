@@ -118,7 +118,7 @@ class _MacroCell extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            grams > 0 ? '${Formatters.grams(grams)}g' : '—',
+            grams > 0 ? '${Formatters.grams(grams)}g' : '–',
             style: AppText.dataS(),
           ),
           Text(label, style: AppText.label(color: AppColors.smoke)),

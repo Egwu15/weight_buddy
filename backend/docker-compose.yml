@@ -59,6 +59,13 @@ services:
       GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID:-dev.apps.googleusercontent.com}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       REVENUECAT_WEBHOOK_SECRET: ${REVENUECAT_WEBHOOK_SECRET:-}
+      DAILY_SPEND_CAP_USD: ${DAILY_SPEND_CAP_USD:-25}
+      # Optional. Empty leaves /admin unregistered.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      # Force-update gate. Keep the minimum at 1.0.0 until an old build retires.
+      MIN_APP_VERSION: ${MIN_APP_VERSION:-1.0.0}
+      APP_STORE_URL: ${APP_STORE_URL:-https://play.google.com/store/apps/details?id=com.tedif.weight_buddy}
+      APP_UPDATE_MESSAGE: ${APP_UPDATE_MESSAGE:-Update Weight Buddy to keep logging your meals and workouts.}
     ports:
       - "8080:8080"
     depends_on:

@@ -30,6 +30,13 @@ const String kSiteBaseUrl = String.fromEnvironment(
   defaultValue: kBackendBaseUrl,
 );
 
+/// Version identifier of the legal documents the app links to and records
+/// acceptance for. It must match the site's "last updated" date
+/// (`backend/web/src/config.ts` -> `lastUpdated`) and is bumped whenever the
+/// privacy policy or terms change. Freeze the outgoing version first with
+/// `make legal-snapshot` so the accepted wording stays available.
+const String kLegalVersion = '2026-10-17';
+
 /// Public legal pages, linked from Settings and required by the Play listing.
 const String kPrivacyUrl = '$kSiteBaseUrl/privacy';
 const String kTermsUrl = '$kSiteBaseUrl/terms';

@@ -96,7 +96,7 @@ void main() {
     await rearm(container, db);
 
     expect(reminder.calls,
-        ['schedule:20:00:Time to log — what did you eat today?']);
+        ['schedule:20:00:Time to log. What did you eat today?']);
   });
 
   test('breakfast only leaves lunch and dinner open', () async {
@@ -151,7 +151,7 @@ void main() {
     await rearm(container, db);
 
     expect(reminder.calls,
-        ['schedule-tomorrow:20:00:Time to log — what did you eat today?']);
+        ['schedule-tomorrow:20:00:Time to log. What did you eat today?']);
   });
 
   test('cancels when the reminder is switched off', () async {
@@ -182,6 +182,6 @@ void main() {
 
     expect(reminder.calls, hasLength(2));
     expect(reminder.calls.last,
-        'schedule:20:00:Time to log — what did you eat today?');
+        'schedule:20:00:Time to log. What did you eat today?');
   });
 }

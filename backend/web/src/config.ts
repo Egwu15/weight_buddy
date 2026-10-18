@@ -21,12 +21,17 @@ export type SiteConfig = {
   tagline: string;
   /** Short "what it does" bullets on the home page. */
   features: string[];
-  /** Third-party AI provider that processes transcription/parsing requests. */
-  aiProviderName: string;
   /** Governing law for the terms of service. */
   governingLaw: string;
   /** Expected turnaround for an emailed deletion request. */
   deletionDays: string;
+  /**
+   * Effective dates of superseded legal versions, newest first (YYYY-MM-DD).
+   * Each one has a frozen copy under `public/legal/archive/<date>/`, made with
+   * `make legal-snapshot` before the copy was changed. Never list a version
+   * whose frozen file does not exist.
+   */
+  legalArchive: string[];
 };
 
 export const config: SiteConfig = {
@@ -35,15 +40,15 @@ export const config: SiteConfig = {
   supportEmail: "contact@tedif.com",
   playStoreUrl: "https://play.google.com/store/apps/details?id=com.tedif.weight_buddy",
   siteUrl: "https://weightbuddy.com",
-  lastUpdated: "2026-10-15",
-  tagline: "Log what you eat and how you move — just by talking.",
+  lastUpdated: "2026-10-17",
+  tagline: "Log what you eat and how you move, just by talking.",
   features: [
     "Log a meal by talking: it becomes calories, protein, carbs and fat.",
     "Log a workout the same way, with no forms to fill in.",
     "See today's calories and macros, and your weight trend over time.",
     "Everything you log stays on your phone.",
   ],
-  aiProviderName: "OpenAI",
   governingLaw: "the Federal Republic of Nigeria",
   deletionDays: "30",
+  legalArchive: ["2026-10-15"],
 };

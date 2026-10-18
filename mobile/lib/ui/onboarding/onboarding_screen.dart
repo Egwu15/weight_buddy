@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../config.dart';
+import '../../data/secure_settings.dart';
 import '../../models/weigh_in.dart';
 import '../../providers/providers.dart';
 import '../../theme/app_colors.dart';
@@ -212,8 +214,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         .read(weighInsProvider.notifier)
         .add(WeighIn(date: today, weightKg: weight));
     await ref.read(appSettingsProvider.notifier).save(next);
+    // Record the legal version accepted by starting to use the app, so the
+    // wording the user agreed to can be shown later.
+    await SecureSettings().writeLegalAcceptance(kLegalVersion, now);
     if (!mounted) return;
-    AppToast.show(context, 'Maintenance ≈ $estimate kcal/day — welcome in.');
+    AppToast.show(context, 'Maintenance ≈ $estimate kcal/day. Welcome in.');
   }
 
   @override
@@ -272,7 +277,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         Text('How tall are you?', style: AppText.headline()),
         const SizedBox(height: 8),
         Text(
-          'Centimetres or feet and inches — whatever you know.',
+          'Centimetres or feet and inches. Whatever you know.',
           style: AppText.bodyMuted(),
         ),
         const SizedBox(height: 20),
@@ -392,8 +397,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         Text('A couple more details', style: AppText.headline()),
         const SizedBox(height: 8),
         Text(
-          'Birthday and sex complete the calorie equation — and we '
-          'work out your age for you.',
+          'Birthday and sex complete the calorie equation. We work out '
+          'your age for you.',
           style: AppText.bodyMuted(),
         ),
         const SizedBox(height: 20),
@@ -448,7 +453,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       Text('How active is your week?', style: AppText.headline()),
       const SizedBox(height: 8),
       Text(
-        'Last one — it scales your estimate.',
+        'Last one. It scales your estimate.',
         style: AppText.bodyMuted(),
       ),
       const SizedBox(height: 20),

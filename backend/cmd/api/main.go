@@ -89,6 +89,12 @@ func run() error {
 		RateLimitPerIPPerMinute:   cfg.RateLimitPerIPPerMinute,
 		RateLimitPerUserPerMinute: cfg.RateLimitPerUserPerMinute,
 		TrustedProxies:            cfg.TrustedProxies,
+		AdminToken:                cfg.AdminToken,
+		AdminCookieSecure:         cfg.IsProduction(),
+		DailySpendCapUSD:          cfg.DailySpendCapUSD,
+		AppMinimumVersion:         cfg.AppMinimumVersion,
+		AppStoreURL:               cfg.AppStoreURL,
+		AppUpdateMessage:          cfg.AppUpdateMessage,
 	})
 	srv := httpapi.NewServer(router, logger)
 

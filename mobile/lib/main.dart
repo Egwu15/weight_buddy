@@ -8,6 +8,7 @@ import 'providers/providers.dart';
 import 'theme/app_theme.dart';
 import 'utils/nudge_message.dart';
 import 'ui/app_shell.dart';
+import 'ui/update_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,7 +69,7 @@ class WeightBuddyApp extends StatelessWidget {
       title: 'Weight Buddy',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
-      home: const AppShell(),
+      home: const UpdateGate(child: AppShell()),
     );
   }
 }

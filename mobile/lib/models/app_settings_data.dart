@@ -11,6 +11,7 @@ class AppSettingsData {
     this.reminderEnabled = false,
     this.reminderTime = const TimeOfDay(hour: 20, minute: 0),
     this.memoryEnabled = true,
+    this.coachDisclaimerDismissed = false,
     this.heightCm,
     this.birthday,
     this.sex,
@@ -32,6 +33,10 @@ class AppSettingsData {
 
   /// Master switch for the coach memory layer (write + inject).
   final bool memoryEnabled;
+
+  /// True once the user has dismissed the coach medical disclaimer, so it
+  /// stays hidden on later visits.
+  final bool coachDisclaimerDismissed;
 
   // ---- First-run profile (feeds the maintenance estimate) ---------------
 
@@ -84,6 +89,7 @@ class AppSettingsData {
     bool? reminderEnabled,
     TimeOfDay? reminderTime,
     bool? memoryEnabled,
+    bool? coachDisclaimerDismissed,
     double? heightCm,
     DateTime? birthday,
     Sex? sex,
@@ -97,6 +103,8 @@ class AppSettingsData {
         reminderEnabled: reminderEnabled ?? this.reminderEnabled,
         reminderTime: reminderTime ?? this.reminderTime,
         memoryEnabled: memoryEnabled ?? this.memoryEnabled,
+        coachDisclaimerDismissed:
+            coachDisclaimerDismissed ?? this.coachDisclaimerDismissed,
         heightCm: heightCm ?? this.heightCm,
         birthday: birthday ?? this.birthday,
         sex: sex ?? this.sex,

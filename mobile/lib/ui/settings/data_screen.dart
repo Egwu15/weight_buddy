@@ -54,7 +54,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
         ShareParams(
           files: [XFile(file.path, mimeType: 'application/json')],
           subject: 'Weight Buddy backup',
-          text: '$count records — keep this file somewhere safe.',
+          text: '$count records. Keep this file somewhere safe.',
         ),
       );
       if (!mounted) return;
@@ -195,7 +195,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
     // off, gets cancelled.
     await ref.read(refreshAfterDataReplacedProvider)(db: db);
     if (!mounted) return;
-    AppToast.show(context, 'App reset — fresh install, welcome back');
+    AppToast.show(context, 'App reset. Fresh install, welcome back');
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
@@ -210,7 +210,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
         backgroundColor: AppColors.bark,
         title: const Text('Load demo data?'),
         content: const Text(
-            'Replaces your entries with a realistic “busy week” demo — '
+            'Replaces your entries with a realistic “busy week” demo: '
             'meals, workouts, weigh-ins, a coach conversation, memories and '
             'saved workouts. Your account sign-in and targets are kept.'),
         actions: [
@@ -257,7 +257,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
           const SizedBox(height: 8),
           Text(
             'Everything is stored on this device. Delete the lot whenever '
-            'you want a clean slate — it resets the app to a fresh install.',
+            'you want a clean slate. It resets the app to a fresh install.',
             style: AppText.bodyMuted(),
           ),
           const SizedBox(height: 20),
@@ -266,7 +266,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
           Text(
             'Export writes everything to a file you can keep or move to '
             'another phone. Import replaces what’s in the app with a backup '
-            'file. Your account sign-in isn’t included — you’ll be signed in '
+            'file. Your account sign-in isn’t included; you’ll be signed in '
             'automatically after a restore.',
             style: AppText.bodyMuted(),
           ),

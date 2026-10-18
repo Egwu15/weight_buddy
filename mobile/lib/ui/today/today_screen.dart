@@ -305,7 +305,7 @@ class _EmptyTimeline extends StatelessWidget {
             Text('Nothing logged today', style: AppText.title()),
             const SizedBox(height: 4),
             Text(
-              'Hold the mic and say what you ate — or type it.',
+              'Hold the mic and say what you ate, or type it.',
               textAlign: TextAlign.center,
               style: AppText.bodyMuted(),
             ),

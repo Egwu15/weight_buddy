@@ -13,4 +13,10 @@ void main() {
     expect(Uri.parse(kTermsUrl).path, '/terms');
     expect(Uri.parse(kDeleteAccountUrl).path, '/delete-account');
   });
+
+  test('legal version is a dated identifier', () {
+    // It is recorded at onboarding and must match the site's lastUpdated, so it
+    // is always a plain YYYY-MM-DD date.
+    expect(RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(kLegalVersion), isTrue);
+  });
 }

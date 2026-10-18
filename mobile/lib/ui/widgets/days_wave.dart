@@ -60,7 +60,7 @@ class _DaysWaveState extends State<DaysWave>
 
   String get _caption {
     if (widget.entries.isEmpty) {
-      return 'Nothing logged yet — hold the mic and say what you ate.';
+      return 'Nothing logged yet. Hold the mic and say what you ate.';
     }
     if (_selected >= 0 && _selected < widget.entries.length) {
       final e = widget.entries[_selected];
